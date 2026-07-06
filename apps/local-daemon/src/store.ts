@@ -136,6 +136,7 @@ export class WorkspaceStore {
     this.db.exec("PRAGMA journal_mode = WAL;");
     this.createSchema();
     this.seedIfEmpty();
+    this.recoverInterruptedRuns();
   }
 
   getWorkspace(): WorkspaceSeed {
@@ -713,6 +714,32 @@ export class WorkspaceStore {
     const roomColumns = this.db.prepare("PRAGMA table_info(rooms)").all() as Array<{ name: string }>;
     if (!roomColumns.some((column) => column.name === "playbook_id")) {
       this.db.exec("ALTER TABLE rooms ADD COLUMN playbook_id TEXT;");
+    }
+  }
+
+  private recoverInterruptedRuns() {
+    const interruptedRuns = this.db.prepare("SELECT * FROM elf_runs WHERE status = ?").all("running") as unknown as RunRow[];
+    if (interruptedRuns.length === 0) {
+      return;
+    }
+
+    const endedAt = new Date().toISOString();
+    const updateRun = this.db.prepare("UPDATE elf_runs SET status = ?, ended_at = ?, exit_code = NULL WHERE id = ?");
+    const updateRoom = this.db.prepare("UPDATE rooms SET status = ?, summary = ?, last_activity_at = ? WHERE id = ?");
+    const insertLog = this.db.prepare("INSERT INTO room_logs (id, room_id, time, level, message) VALUES (?, ?, ?, ?, ?)");
+
+    this.db.exec("BEGIN");
+    try {
+      for (const run of interruptedRuns) {
+        const summary = `Run ${run.id} was interrupted by daemon restart before completion.`;
+        updateRun.run("failed", endedAt, run.id);
+        updateRoom.run("failed", summary, "now", run.room_id);
+        insertLog.run(`log-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`, run.room_id, "now", "warning", summary);
+      }
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
     }
   }
 
