@@ -22,6 +22,8 @@
 - [x] Add retry action from the latest room run mode.
 - [x] Add CodeVetter gate adapter for completed worktree runs.
 - [x] Add generated worktree cleanup control.
+- [x] Add room-aware prompt capture.
+- [x] Feed founder fix notes into retry prompts.
 
 ## Verification
 
@@ -44,4 +46,6 @@
 - [x] `POST /api/runs/:id/codevetter`
 - [x] Blocking CodeVetter finding marks the room failed and creates a Needs Me item.
 - [x] `POST /api/runs/:id/cleanup-worktree`
+- [x] `GET /api/runs/:id/prompt`
+- [x] Request-fix note appears in the next retry run prompt.
 - [x] Browser smoke of local cockpit

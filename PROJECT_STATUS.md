@@ -8,7 +8,7 @@ Elves HQ is a local-first founder cockpit for running Codex elves across a produ
 
 **Users:** Sarthak first: an AI-native founder/operator managing many local fleet repos with Codex and adjacent coding agents.
 
-**IN scope for V0:** local product registry, project-wise task list, task rooms, elf assignment/status, room asks, logs, artifacts, decision actions, check gates, CodeVetter review gate adapter, generated worktree cleanup controls, resizable room UI, tasteful elf workbench animation, local-only operation.
+**IN scope for V0:** local product registry, project-wise task list, task rooms, elf assignment/status, room asks, logs, artifacts, captured run prompts, decision actions, fix-request retry context, check gates, CodeVetter review gate adapter, generated worktree cleanup controls, resizable room UI, tasteful elf workbench animation, local-only operation.
 
 **OUT of scope for V0:** cloud hosting, auth, public API, widgets, billing, production deploys, Telegram, metrics integrations, marketing automation, feedback ingestion, multi-user workspaces, and generic multi-agent adapters.
 
@@ -33,7 +33,7 @@ Elves HQ is a local-first founder cockpit for running Codex elves across a produ
 - 2026-07-06 - Project created as a fresh local-first replacement direction for SaaS Maker's original operating-cockpit ambition.
 - 2026-07-06 - V0 OpenSpec change `local-task-rooms-v0` started.
 - 2026-07-06 - Local daemon and root SQLite store added for persisted workspace/room data and room notes.
-- 2026-07-07 - Task-room creation, isolated worktree runs, diff capture, check gates, CodeVetter gate adapter, generated worktree cleanup, a signal-backed Needs Me queue, and founder decision actions landed in the local cockpit.
+- 2026-07-07 - Task-room creation, isolated worktree runs, diff capture, captured prompts, fix-request retry context, check gates, CodeVetter gate adapter, generated worktree cleanup, a signal-backed Needs Me queue, and founder decision actions landed in the local cockpit.
 
 ## Products
 
@@ -44,9 +44,11 @@ Elves HQ is a local-first founder cockpit for running Codex elves across a produ
 ## Features (shipped)
 
 - Initial V0 local cockpit scaffold with seeded project/task-room data.
-- Local daemon exposes `GET /api/health`, `GET /api/workspace`, `GET /api/needs-me`, `POST /api/rooms`, `POST /api/rooms/:id/notes`, `POST /api/rooms/:id/decision`, `GET /api/rooms/:id/runs`, `POST /api/rooms/:id/runs/start`, and `POST /api/runs/:id/kill`.
+- Local daemon exposes `GET /api/health`, `GET /api/workspace`, `GET /api/needs-me`, `POST /api/rooms`, `POST /api/rooms/:id/notes`, `POST /api/rooms/:id/decision`, `GET /api/rooms/:id/runs`, `POST /api/rooms/:id/runs/start`, `GET /api/runs/:id/prompt`, and `POST /api/runs/:id/kill`.
 - SQLite persistence stores projects, elves, tasks, rooms, logs, asks, artifacts, decisions, and notes in ignored local `data/elves.db`.
 - Room runs support local dry runs and read-only Codex inspection, stream stdout/stderr into room logs, persist run records, support kill, and enforce a default runtime cap.
+- Room-aware run prompts are captured to `runs/<run-id>/prompt.md` and include acceptance criteria, founder notes, prior decisions, artifacts, and recent logs.
+- Request-fix and retry actions can carry the room draft note, so founder fix context is persisted and injected into the next run prompt.
 - Worktree-backed runs create isolated branches/worktrees under ignored `runs/<run-id>/worktree`, capture `git diff` patches to `runs/<run-id>/diff.patch`, and attach ready diff artifacts to the room.
 - Write-capable Codex mode is available only inside isolated worktrees; it is not used for direct repo writes.
 - Check gates run inside the isolated worktree, capture output to `runs/<run-id>/check.log`, and attach pass/fail test artifacts to the room.
@@ -59,8 +61,7 @@ Elves HQ is a local-first founder cockpit for running Codex elves across a produ
 
 ## Todo / Planned / Deferred / Blocked
 
-1. Add richer fix-request prompts that feed founder notes back into the next Codex worktree run.
-2. Replace the local CodeVetter fallback scan with the full CodeVetter CLI once that interface is stable.
+1. Replace the local CodeVetter fallback scan with the full CodeVetter CLI once that interface is stable.
 
 ### Deferred
 

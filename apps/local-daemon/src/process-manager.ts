@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import type { CheckScriptKey, ElfRun } from "@elves-hq/core";
+import type { CheckScriptKey, ElfRun, Product, Room, Task } from "@elves-hq/core";
 import { WorkspaceStore } from "./store";
 
 const projectRoot = fileURLToPath(new URL("../../../", import.meta.url));
@@ -35,7 +35,10 @@ export class RoomProcessManager {
     const product = this.store.getProduct(room.productId);
     const task = this.store.getTask(room.taskId);
     const command = this.buildCommandDescription(product.localPath, task.title, options);
+    const prompt = options.prompt?.trim() || buildRoomRunPrompt(room, product, task, options.mode);
+    const runOptions = { ...options, prompt };
     const run = this.store.createRun(room.id, options.mode, command);
+    this.captureRunPrompt(run, prompt);
     let worktree: { path: string; branchName: string } | undefined;
     try {
       worktree = this.createWorktreeIfNeeded(run, product.localPath, task.title, options.mode);
@@ -44,7 +47,7 @@ export class RoomProcessManager {
       this.store.finishRun(run.id, "failed", null);
       throw error;
     }
-    const child = this.spawnRun(product.localPath, task.title, options, worktree?.path);
+    const child = this.spawnRun(product.localPath, task.title, runOptions, worktree?.path);
     const timeout = setTimeout(() => {
       if (!this.running.has(run.id)) {
         return;
@@ -70,13 +73,16 @@ export class RoomProcessManager {
     return { ok: true };
   }
 
-  retryRoom(roomId: string) {
+  retryRoom(roomId: string, founderNote?: string) {
     if ([...this.running.values()].some((entry) => entry.roomId === roomId)) {
       throw new Error("A run is already active in this room");
     }
 
     const latestRun = this.store.listRuns(roomId)[0];
-    this.store.resolveDecision(roomId, { action: "retry", note: latestRun ? `Retrying ${latestRun.mode} from ${latestRun.id}.` : "Starting first dry run." });
+    const retryNote = [latestRun ? `Retrying ${latestRun.mode} from ${latestRun.id}.` : "Starting first dry run.", founderNote?.trim()]
+      .filter(Boolean)
+      .join(" ");
+    this.store.resolveDecision(roomId, { action: "retry", note: retryNote });
     return this.startRoomRun(roomId, { mode: latestRun?.mode ?? "dry-run" });
   }
 
@@ -283,7 +289,7 @@ export class RoomProcessManager {
     }
 
     const prompt = [
-      options.prompt?.trim() || defaultPrompt(taskTitle, options.mode),
+      options.prompt?.trim() || `Inspect the task "${taskTitle}" and report the safest next step.`,
       "",
       options.mode === "codex-worktree"
         ? "You are running from Elves HQ inside an isolated git worktree. You may edit files only in this worktree."
@@ -344,6 +350,18 @@ export class RoomProcessManager {
       clearTimeout(running.timeout);
       this.running.delete(runId);
     }
+  }
+
+  private captureRunPrompt(run: ElfRun, prompt: string) {
+    const promptPath = resolve(runsRoot, run.id, "prompt.md");
+    mkdirSync(dirname(promptPath), { recursive: true });
+    writeFileSync(promptPath, `${prompt.trim()}\n`);
+    this.store.addArtifact(run.roomId, {
+      type: "log",
+      title: `Run prompt for ${run.id}`,
+      summary: `Captured prompt context at ${promptPath}`,
+      status: "ready"
+    });
   }
 
   private writeLines(roomId: string, level: "info" | "warning", output: string) {
@@ -431,12 +449,51 @@ export class RoomProcessManager {
   }
 }
 
-function defaultPrompt(taskTitle: string, mode: ElfRun["mode"]) {
-  if (mode === "codex-worktree") {
-    return `Work on the task "${taskTitle}" in the smallest safe way. Keep changes scoped and leave a concise summary.`;
-  }
+function buildRoomRunPrompt(room: Room, product: Product, task: Task, mode: ElfRun["mode"]) {
+  const acceptance = task.acceptanceCriteria.length > 0 ? task.acceptanceCriteria.map((item) => `- ${item}`).join("\n") : "- No acceptance criteria recorded.";
+  const notes = room.notes.length > 0 ? room.notes.slice(-8).map((note) => `- ${note}`).join("\n") : "- No founder notes recorded.";
+  const decisions = room.decisions.length > 0 ? room.decisions.slice(-6).map((decision) => `- ${decision.status}: ${decision.title} (${decision.risk})`).join("\n") : "- No decisions recorded.";
+  const artifacts = room.artifacts.length > 0 ? room.artifacts.slice(-8).map((artifact) => `- ${artifact.status}: ${artifact.title} - ${artifact.summary}`).join("\n") : "- No artifacts recorded yet.";
+  const logs = room.logs.length > 0 ? room.logs.slice(-10).map((log) => `- ${log.time} ${log.level}: ${log.message}`).join("\n") : "- No recent logs.";
+  const modeInstruction =
+    mode === "codex-worktree" || mode === "worktree-dry-run"
+      ? "You are working in an isolated git worktree. Keep changes scoped to this room and do not commit, push, deploy, migrate, access secrets, spend money, message users, or make irreversible changes."
+      : "You are inspecting in read-only mode. Do not edit files.";
 
-  return `Inspect the task "${taskTitle}" and report the safest next step. Do not edit files.`;
+  return [
+    `You are an Elves HQ coding elf assigned to the room "${room.title}".`,
+    "",
+    "## Product",
+    `- Name: ${product.name}`,
+    `- Local path: ${product.localPath}`,
+    `- Current goal: ${product.currentGoal}`,
+    "",
+    "## Task",
+    `- Title: ${task.title}`,
+    `- Priority: ${task.priority}`,
+    `- Room status: ${room.status}`,
+    `- Room summary: ${room.summary}`,
+    "",
+    "## Acceptance Criteria",
+    acceptance,
+    "",
+    "## Founder Notes And Fix Requests",
+    notes,
+    "",
+    "## Recent Decisions",
+    decisions,
+    "",
+    "## Existing Artifacts",
+    artifacts,
+    "",
+    "## Recent Room Logs",
+    logs,
+    "",
+    "## Instructions",
+    modeInstruction,
+    "Use the founder notes and requested-fix context as the highest-priority room guidance after the acceptance criteria.",
+    "Return a concise status update with concrete files changed, commands run, blockers, and remaining founder decisions."
+  ].join("\n");
 }
 
 function detectCheckCommand(worktreePath: string, requestedScript: CheckScriptKey | undefined) {

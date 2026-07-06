@@ -117,6 +117,7 @@ export function App() {
   const [selectedRoomId, setSelectedRoomId] = useState<string>(seedWorkspace.rooms[1]?.id ?? "");
   const [roomNotes, setRoomNotes] = useState<Record<string, string>>({});
   const [roomRuns, setRoomRuns] = useState<Record<string, ElfRun[]>>({});
+  const [promptPreview, setPromptPreview] = useState<Record<string, string>>({});
   const [diffPreview, setDiffPreview] = useState<Record<string, string>>({});
   const [checkPreview, setCheckPreview] = useState<Record<string, string>>({});
   const [codevetterPreview, setCodevetterPreview] = useState<Record<string, string>>({});
@@ -310,6 +311,23 @@ export function App() {
     }
   };
 
+  const openLatestPrompt = async (roomId: string) => {
+    const run = roomRuns[roomId]?.[0];
+    if (!run) {
+      setPromptPreview((current) => ({ ...current, [roomId]: "No run prompt has been captured yet." }));
+      return;
+    }
+
+    const response = await fetch(`${daemonBaseUrl}/api/runs/${run.id}/prompt`);
+    if (!response.ok) {
+      setPromptPreview((current) => ({ ...current, [roomId]: "No prompt file was found for the latest run." }));
+      return;
+    }
+
+    const body = (await response.json()) as { prompt: string };
+    setPromptPreview((current) => ({ ...current, [roomId]: body.prompt || "Prompt file is empty." }));
+  };
+
   const openLatestDiff = async (roomId: string) => {
     const run = roomRuns[roomId]?.find((item) => item.mode.includes("worktree") && item.status === "completed");
     if (!run) {
@@ -410,6 +428,9 @@ export function App() {
     setDecisionItems(body.needs);
     setSelectedRoomId(body.room.id);
     setSelectedProductId(body.room.productId);
+    if (note?.trim()) {
+      setRoomNotes((current) => ({ ...current, [roomId]: "" }));
+    }
     const run = body.run;
     if (run) {
       setRoomRuns((current) => ({ ...current, [body.room.id]: [run, ...(current[body.room.id] ?? [])] }));
@@ -626,6 +647,7 @@ export function App() {
           workspace={workspace}
           runs={roomRuns[selectedRoom.id] ?? []}
           diffPreview={diffPreview[selectedRoom.id]}
+          promptPreview={promptPreview[selectedRoom.id]}
           checkPreview={checkPreview[selectedRoom.id]}
           codevetterPreview={codevetterPreview[selectedRoom.id]}
           cleanupPreview={cleanupPreview[selectedRoom.id]}
@@ -635,12 +657,13 @@ export function App() {
           onStartDryRun={() => startRoomRun(selectedRoom.id, "dry-run")}
           onStartCodexReadOnly={() => startRoomRun(selectedRoom.id, "codex-readonly")}
           onStartMode={(mode) => startRoomRun(selectedRoom.id, mode)}
+          onOpenPrompt={() => openLatestPrompt(selectedRoom.id)}
           onOpenDiff={() => openLatestDiff(selectedRoom.id)}
           onRunCheck={() => runLatestCheck(selectedRoom.id)}
           onRunCodeVetter={() => runLatestCodeVetter(selectedRoom.id)}
           onCleanupWorktree={() => cleanupLatestWorktree(selectedRoom.id)}
           onKillRun={() => killLatestRun(selectedRoom.id)}
-          onDecisionAction={(action) => performDecisionAction(selectedRoom.id, action)}
+          onDecisionAction={(action, note) => performDecisionAction(selectedRoom.id, action, note)}
         />
       </section>
     </main>
@@ -824,6 +847,7 @@ function RoomDetail({
   room,
   workspace,
   runs,
+  promptPreview,
   diffPreview,
   checkPreview,
   codevetterPreview,
@@ -834,6 +858,7 @@ function RoomDetail({
   onStartDryRun,
   onStartCodexReadOnly,
   onStartMode,
+  onOpenPrompt,
   onOpenDiff,
   onRunCheck,
   onRunCodeVetter,
@@ -844,6 +869,7 @@ function RoomDetail({
   room: Room;
   workspace: WorkspaceSeed;
   runs: ElfRun[];
+  promptPreview?: string;
   diffPreview?: string;
   checkPreview?: string;
   codevetterPreview?: string;
@@ -854,18 +880,20 @@ function RoomDetail({
   onStartDryRun: () => void;
   onStartCodexReadOnly: () => void;
   onStartMode: (mode: ElfRun["mode"]) => void;
+  onOpenPrompt: () => void;
   onOpenDiff: () => void;
   onRunCheck: () => void;
   onRunCodeVetter: () => void;
   onCleanupWorktree: () => void;
   onKillRun: () => void;
-  onDecisionAction: (action: DecisionAction) => void;
+  onDecisionAction: (action: DecisionAction, note?: string) => void;
 }) {
   const product = roomProduct(workspace, room);
   const elf = roomElf(workspace, room);
   const task = roomTask(workspace, room);
   const ask = room.asks[0];
   const activeRun = runs.find((run) => run.status === "running");
+  const decisionNote = noteDraft.trim() || undefined;
 
   return (
     <div className="grid gap-4 p-4">
@@ -925,6 +953,7 @@ function RoomDetail({
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onStartCodexReadOnly}><SquareTerminal size={15} />Read</Button>
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onStartMode("worktree-dry-run")}><GitBranch size={15} />Draft</Button>
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onStartMode("codex-worktree")}><Hammer size={15} />Build</Button>
+            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onOpenPrompt}><ScrollText size={15} />Prompt</Button>
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onOpenDiff}><GitBranch size={15} />Diff</Button>
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onRunCheck}><TestTube2 size={15} />Check</Button>
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onRunCodeVetter}><ShieldCheck size={15} />Vet</Button>
@@ -932,11 +961,11 @@ function RoomDetail({
             <Button className="min-w-0 px-2" variant="destructive" size="sm" type="button" onClick={onKillRun} disabled={!activeRun}><CircleStop size={15} />Kill</Button>
           </div>
           <div className="mt-3 grid grid-cols-2 gap-2 border-t border-stone-200 pt-3">
-            <Button className="min-w-0 px-2" size="sm" type="button" onClick={() => onDecisionAction("approve")}>Approve</Button>
-            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onDecisionAction("request_fix")}>Request fix</Button>
-            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onDecisionAction("snooze")}>Snooze</Button>
-            <Button className="min-w-0 px-2" variant="destructive" size="sm" type="button" onClick={() => onDecisionAction("reject")}>Reject</Button>
-            <Button className="col-span-2 min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onDecisionAction("retry")}>Retry latest run</Button>
+            <Button className="min-w-0 px-2" size="sm" type="button" onClick={() => onDecisionAction("approve", decisionNote)}>Approve</Button>
+            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onDecisionAction("request_fix", decisionNote)}>Request fix</Button>
+            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onDecisionAction("snooze", decisionNote)}>Snooze</Button>
+            <Button className="min-w-0 px-2" variant="destructive" size="sm" type="button" onClick={() => onDecisionAction("reject", decisionNote)}>Reject</Button>
+            <Button className="col-span-2 min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onDecisionAction("retry", decisionNote)}>Retry latest run</Button>
           </div>
         </div>
       </section>
@@ -958,6 +987,15 @@ function RoomDetail({
               </div>
             ))}
           </div>
+        </section>
+      ) : null}
+
+      {promptPreview ? (
+        <section>
+          <SectionTitle icon={<ScrollText size={16} />} title="Run prompt" />
+          <pre className="max-h-72 overflow-auto rounded-lg bg-stone-950 p-3 text-xs leading-5 text-stone-100">
+            <code>{promptPreview}</code>
+          </pre>
         </section>
       ) : null}
 

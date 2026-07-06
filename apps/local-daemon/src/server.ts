@@ -73,7 +73,7 @@ const server = createServer(async (request, response) => {
       const body = await readJson(request);
       const input = readDecisionInput(body);
       if (input.action === "retry") {
-        const result = processManager.retryRoom(decisionMatch[1]);
+        const result = processManager.retryRoom(decisionMatch[1], input.note);
         sendJson(response, 200, { ...result, workspace: store.getWorkspace(), needs: store.getDecisionItems() });
         return;
       }
@@ -102,6 +102,24 @@ const server = createServer(async (request, response) => {
     const killRunMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/kill$/);
     if (request.method === "POST" && killRunMatch) {
       sendJson(response, 200, processManager.killRun(killRunMatch[1]));
+      return;
+    }
+
+    const promptMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/prompt$/);
+    if (request.method === "GET" && promptMatch) {
+      const runId = promptMatch[1];
+      if (!/^run-[a-z0-9-]+$/i.test(runId)) {
+        sendJson(response, 400, { error: "Invalid run id" });
+        return;
+      }
+
+      const promptPath = fileURLToPath(new URL(`${runId}/prompt.md`, `file://${runsRoot.endsWith("/") ? runsRoot : `${runsRoot}/`}`));
+      if (!existsSync(promptPath)) {
+        sendJson(response, 404, { error: "No prompt captured for this run" });
+        return;
+      }
+
+      sendJson(response, 200, { runId, prompt: readFileSync(promptPath, "utf8") });
       return;
     }
 

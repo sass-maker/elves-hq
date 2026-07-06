@@ -59,6 +59,12 @@ The cockpit MUST let the founder resolve surfaced decisions without editing the 
 - **THEN** the daemon starts a new run using the latest run mode for that room
 - **AND** the new run appears in the room run list
 
+#### Scenario: Founder requests a fix with context
+
+- **WHEN** the founder requests a fix with a room note
+- **THEN** the daemon persists the note with the decision
+- **AND** a later retry includes that fix context in the captured run prompt
+
 ### Requirement: Local-first V0
 
 The V0 cockpit MUST run locally without cloud auth or hosted API dependencies.
@@ -96,6 +102,12 @@ The V0 daemon MUST be able to start, log, persist, and stop room-scoped runs.
 - **THEN** the daemon launches `codex exec` with read-only sandboxing
 - **AND** Codex output is appended to room logs
 - **AND** the daemon can stop the process if the founder kills it or it exceeds the runtime cap
+
+#### Scenario: Founder inspects a run prompt
+
+- **WHEN** a room run starts
+- **THEN** the daemon writes the prompt context to a local prompt artifact
+- **AND** the cockpit can preview the captured prompt for that run
 
 #### Scenario: Founder starts a worktree-backed run
 
