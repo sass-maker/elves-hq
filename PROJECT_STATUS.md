@@ -56,7 +56,7 @@ Elves HQ is a local-first founder cockpit for running Codex elves across a produ
 - Check gates run inside the isolated worktree, capture output to `runs/<run-id>/check.log`, attach pass/fail test artifacts to the room, and mark rooms failed when the current check gate fails.
 - CodeVetter gate runs against captured worktree diffs, writes reports to `runs/<run-id>/codevetter.md`, attaches review artifacts, and marks rooms failed when blocking findings are detected.
 - Founder approval is blocked while the room has an unresolved current failed test or review gate.
-- Worktree cleanup removes generated `runs/<run-id>/worktree` checkouts on demand while preserving captured diff, check, and review artifacts.
+- Worktree cleanup removes generated `runs/<run-id>/worktree` checkouts on demand, deletes daemon-created `elves/<room>/<run>` branches when Git considers them safely merged, and preserves captured diff, check, and review artifacts.
 - Project-wise room creation is available from the cockpit and via `POST /api/rooms`.
 - Fleet registry import from `../saas-maker/foundry.projects.json` is wired through the daemon and UI.
 - Needs Me queue aggregates founder decisions from room asks, blocked/failed runs, failed gates, and ready artifacts via `GET /api/needs-me`.

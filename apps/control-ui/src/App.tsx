@@ -460,11 +460,12 @@ export function App() {
       return;
     }
 
-    const body = (await response.json()) as { removed: boolean; worktreePath: string; room: Room };
+    const body = (await response.json()) as { removed: boolean; branchName?: string; branchRemoved?: boolean; worktreePath: string; room: Room };
     replaceRoom(body.room);
+    const branchText = body.branchName ? ` Branch ${body.branchRemoved ? "removed" : "kept"}: ${body.branchName}` : "";
     setCleanupPreview((current) => ({
       ...current,
-      [roomId]: body.removed ? `Removed generated worktree: ${body.worktreePath}` : `No generated worktree found: ${body.worktreePath}`
+      [roomId]: body.removed ? `Removed generated worktree: ${body.worktreePath}.${branchText}` : `No generated worktree found: ${body.worktreePath}.${branchText}`
     }));
   };
 

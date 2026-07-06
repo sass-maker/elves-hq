@@ -219,12 +219,21 @@ export class RoomProcessManager {
     const product = this.store.getProduct(room.productId);
     const sourcePath = resolve(projectRoot, product.localPath);
     const worktreePath = resolve(runsRoot, run.id, "worktree");
+    const branchName = generatedBranchNameForRun(run);
 
     if (!existsSync(worktreePath)) {
+      const branchCleanup = isGeneratedBranchName(branchName) ? removeGeneratedBranch(sourcePath, branchName) : { removed: false };
       this.store.appendRoomLog(run.roomId, "warning", `No generated worktree found for ${run.id}; captured artifacts remain available.`);
+      if (branchCleanup.removed) {
+        this.store.appendRoomLog(run.roomId, "success", `Removed generated branch ${branchName}.`);
+      } else if (branchCleanup.warning) {
+        this.store.appendRoomLog(run.roomId, "warning", branchCleanup.warning);
+      }
       return {
         runId: run.id,
         removed: false,
+        branchName,
+        branchRemoved: branchCleanup.removed,
         worktreePath,
         room: this.store.getRoom(run.roomId)
       };
@@ -237,10 +246,17 @@ export class RoomProcessManager {
       throw new Error(result.stderr.trim() || `Failed to remove worktree for ${run.id}`);
     }
 
+    const branchCleanup = isGeneratedBranchName(branchName) ? removeGeneratedBranch(sourcePath, branchName) : { removed: false };
+    if (branchCleanup.removed) {
+      this.store.appendRoomLog(run.roomId, "success", `Removed generated branch ${branchName}.`);
+    } else if (branchCleanup.warning) {
+      this.store.appendRoomLog(run.roomId, "warning", branchCleanup.warning);
+    }
+
     this.store.addArtifact(run.roomId, {
       type: "log",
       title: `Worktree cleanup for ${run.id}`,
-      summary: `Removed generated worktree at ${worktreePath}; captured diff, check, and review artifacts remain in runs/${run.id}.`,
+      summary: `Removed generated worktree at ${worktreePath}${branchCleanup.removed ? ` and branch ${branchName}` : ""}; captured diff, check, and review artifacts remain in runs/${run.id}.`,
       status: "passed"
     });
     this.store.appendRoomLog(run.roomId, "success", `Removed generated worktree for ${run.id}. Captured artifacts remain available.`);
@@ -248,6 +264,8 @@ export class RoomProcessManager {
     return {
       runId: run.id,
       removed: true,
+      branchName,
+      branchRemoved: branchCleanup.removed,
       worktreePath,
       room: this.store.getRoom(run.roomId)
     };
@@ -580,6 +598,36 @@ function detectCheckCommand(worktreePath: string, requestedScript: CheckScriptKe
     args: ["run", scriptKey],
     label: `npm run ${scriptKey}`
   };
+}
+
+function generatedBranchNameForRun(run: Pick<ElfRun, "roomId" | "id">) {
+  return `elves/${run.roomId}/${run.id}`;
+}
+
+function isGeneratedBranchName(branchName: string) {
+  return /^elves\/room-[a-z0-9-]+\/run-[a-z0-9-]+$/i.test(branchName);
+}
+
+function removeGeneratedBranch(sourcePath: string, branchName: string) {
+  const exists = spawnSync("git", ["-C", sourcePath, "show-ref", "--verify", "--quiet", `refs/heads/${branchName}`], {
+    encoding: "utf8"
+  });
+  if (exists.status !== 0) {
+    return { removed: false };
+  }
+
+  const result = spawnSync("git", ["-C", sourcePath, "branch", "--delete", branchName], {
+    encoding: "utf8"
+  });
+
+  if (result.status !== 0) {
+    return {
+      removed: false,
+      warning: result.stderr.trim() || `Generated branch ${branchName} was not removed.`
+    };
+  }
+
+  return { removed: true };
 }
 
 interface CodeVetterReport {
