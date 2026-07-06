@@ -1,6 +1,6 @@
 # Product Memory Specification
 
-## Requirements
+## ADDED Requirements
 
 ### Requirement: Local product memory
 

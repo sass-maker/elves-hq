@@ -1,7 +1,8 @@
-# Daily Brief Specification
+# daily-brief Specification
 
+## Purpose
+Define the local operating brief that summarizes artifact-backed room progress and recommended founder actions.
 ## Requirements
-
 ### Requirement: Local daily brief
 
 Elves HQ MUST expose a local daily brief computed from current workspace signals.
