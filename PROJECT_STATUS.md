@@ -33,7 +33,7 @@ Elves HQ is a local-first founder cockpit for running Codex elves across a produ
 - 2026-07-06 - Project created as a fresh local-first replacement direction for SaaS Maker's original operating-cockpit ambition.
 - 2026-07-06 - V0 OpenSpec change `local-task-rooms-v0` started.
 - 2026-07-06 - Local daemon and root SQLite store added for persisted workspace/room data and room notes.
-- 2026-07-07 - Task-room creation, isolated worktree runs, diff capture, captured prompts, editable local product memory, built-in playbooks, fix-request retry context, local Daily Brief, check gates, CodeVetter gate adapter, generated worktree cleanup, a signal-backed Needs Me queue, and founder decision actions landed in the local cockpit.
+- 2026-07-07 - Task-room creation, isolated worktree runs, diff capture, captured prompts, editable local product memory, built-in playbooks, fix-request retry context, local Daily Brief, check gates, CodeVetter gate adapter, generated worktree cleanup, a signal-backed Needs Me queue, founder decision actions, and blocking-gate approval guards landed in the local cockpit.
 
 ## Products
 
@@ -53,8 +53,9 @@ Elves HQ is a local-first founder cockpit for running Codex elves across a produ
 - Request-fix and retry actions can carry the room draft note, so founder fix context is persisted and injected into the next run prompt.
 - Worktree-backed runs create isolated branches/worktrees under ignored `runs/<run-id>/worktree`, capture `git diff` patches to `runs/<run-id>/diff.patch`, and attach ready diff artifacts to the room.
 - Write-capable Codex mode is available only inside isolated worktrees; it is not used for direct repo writes.
-- Check gates run inside the isolated worktree, capture output to `runs/<run-id>/check.log`, and attach pass/fail test artifacts to the room.
+- Check gates run inside the isolated worktree, capture output to `runs/<run-id>/check.log`, attach pass/fail test artifacts to the room, and mark rooms failed when the current check gate fails.
 - CodeVetter gate runs against captured worktree diffs, writes reports to `runs/<run-id>/codevetter.md`, attaches review artifacts, and marks rooms failed when blocking findings are detected.
+- Founder approval is blocked while the room has an unresolved current failed test or review gate.
 - Worktree cleanup removes generated `runs/<run-id>/worktree` checkouts on demand while preserving captured diff, check, and review artifacts.
 - Project-wise room creation is available from the cockpit and via `POST /api/rooms`.
 - Fleet registry import from `../saas-maker/foundry.projects.json` is wired through the daemon and UI.

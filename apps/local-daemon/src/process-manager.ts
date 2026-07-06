@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import type { CheckScriptKey, ElfRun, Playbook, Product, ProductMemory, Room, Task } from "@elves-hq/core";
+import { getBlockingArtifacts, type CheckScriptKey, type ElfRun, type Playbook, type Product, type ProductMemory, type Room, type Task } from "@elves-hq/core";
 import { WorkspaceStore } from "./store";
 
 const projectRoot = fileURLToPath(new URL("../../../", import.meta.url));
@@ -130,6 +130,11 @@ export class RoomProcessManager {
       summary: `${passed ? "Passed" : "Failed"} with exit code ${result.status ?? "unknown"}; output captured at ${outputPath}`,
       status: passed ? "passed" : "failed"
     });
+    if (!passed) {
+      this.store.markRoomStatus(run.roomId, "failed", `Check gate failed for ${run.id}: ${command.label}`);
+    } else {
+      this.markReadyIfGatesAreClear(run.roomId, `Check gate passed for ${run.id}: ${command.label}`);
+    }
     this.store.appendRoomLog(run.roomId, passed ? "success" : "error", `Check gate ${passed ? "passed" : "failed"}: ${command.label}`);
 
     return {
@@ -178,6 +183,8 @@ export class RoomProcessManager {
     });
     if (report.blocking) {
       this.store.markRoomStatus(run.roomId, "failed", `CodeVetter blocked run ${run.id}: ${report.summary}`);
+    } else {
+      this.markReadyIfGatesAreClear(run.roomId, `CodeVetter passed for ${run.id}: ${report.summary}`);
     }
     this.store.appendRoomLog(run.roomId, report.blocking ? "error" : "success", `CodeVetter gate ${report.blocking ? "blocked" : "passed"}: ${report.summary}`);
 
@@ -190,6 +197,13 @@ export class RoomProcessManager {
       outputPath,
       output: report.markdown
     };
+  }
+
+  private markReadyIfGatesAreClear(roomId: string, summary: string) {
+    const room = this.store.getRoom(roomId);
+    if (room.status !== "done" && getBlockingArtifacts(room).length === 0) {
+      this.store.markRoomStatus(roomId, "ready", summary);
+    }
   }
 
   cleanupWorktree(runId: string) {

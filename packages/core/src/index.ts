@@ -285,12 +285,34 @@ const decisionRiskRank: Record<DecisionItem["risk"], number> = {
   high: 3
 };
 
+export function getBlockingArtifacts(room: Pick<Room, "artifacts">): Artifact[] {
+  const latestGateByType = new Map<Artifact["type"], Artifact>();
+
+  for (const artifact of room.artifacts) {
+    if (artifact.type === "test" || artifact.type === "review") {
+      latestGateByType.set(artifact.type, artifact);
+    }
+  }
+
+  return room.artifacts.filter((artifact) => {
+    if (artifact.status !== "failed") {
+      return false;
+    }
+
+    if (artifact.type === "test" || artifact.type === "review") {
+      return latestGateByType.get(artifact.type)?.id === artifact.id;
+    }
+
+    return true;
+  });
+}
+
 export function buildDecisionItems(rooms: Room[]): DecisionItem[] {
   return rooms
     .flatMap((room) => {
       const ask = room.asks[0];
       const readyArtifacts = room.artifacts.filter((artifact) => artifact.status === "ready" || artifact.status === "passed");
-      const failedArtifacts = room.artifacts.filter((artifact) => artifact.status === "failed");
+      const failedArtifacts = getBlockingArtifacts(room);
       const recentLogs = room.logs.slice(-3).map((log) => `${log.level}: ${log.message}`);
       const canQueueArtifactSignals = room.status !== "done" && room.status !== "idle";
       const items: DecisionItem[] = [];
@@ -362,7 +384,7 @@ export function buildDailyBrief(workspace: WorkspaceSeed, generatedAt = new Date
     const product = productsById.get(room.productId);
     const item = briefItem(room, product?.name ?? "Unknown project");
     const readyArtifacts = room.artifacts.filter((artifact) => artifact.status === "ready" || artifact.status === "passed");
-    const failedArtifacts = room.artifacts.filter((artifact) => artifact.status === "failed");
+    const failedArtifacts = getBlockingArtifacts(room);
     const approved = room.decisions.some((decision) => decision.status === "approved");
 
     if (room.status === "done" && approved) {

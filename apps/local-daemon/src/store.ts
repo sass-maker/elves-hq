@@ -6,6 +6,7 @@ import {
   buildDecisionItems,
   buildDailyBrief,
   builtInPlaybooks,
+  getBlockingArtifacts,
   productMemorySectionDefinitions,
   seedWorkspace,
   type Artifact,
@@ -371,6 +372,11 @@ export class WorkspaceStore {
   resolveDecision(roomId: string, input: ResolveDecisionInput): Room {
     const room = this.getRoom(roomId);
     const note = input.note?.trim();
+    const blockers = getBlockingArtifacts(room);
+    if (input.action === "approve" && blockers.length > 0) {
+      throw new Error(`Cannot approve while blocking gate artifacts remain: ${blockers.map((artifact) => artifact.title).join(", ")}`);
+    }
+
     const resolution = decisionResolution(input.action, note);
     const decisionId = `dec-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
