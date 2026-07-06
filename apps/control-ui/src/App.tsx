@@ -83,6 +83,12 @@ export function App() {
   const [roomRuns, setRoomRuns] = useState<Record<string, ElfRun[]>>({});
   const [diffPreview, setDiffPreview] = useState<Record<string, string>>({});
   const [checkPreview, setCheckPreview] = useState<Record<string, string>>({});
+  const [isCreatingRoom, setIsCreatingRoom] = useState(false);
+  const [newRoom, setNewRoom] = useState({
+    productId: seedWorkspace.products[0]?.id ?? "",
+    title: "",
+    acceptanceCriteria: ""
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -307,6 +313,40 @@ export function App() {
     const body = (await response.json()) as { workspace: WorkspaceSeed };
     setWorkspace(body.workspace);
     setDaemonState("local");
+    setNewRoom((current) => ({ ...current, productId: body.workspace.products[0]?.id ?? current.productId }));
+  };
+
+  const createRoom = async () => {
+    const title = newRoom.title.trim();
+    if (!title) {
+      return;
+    }
+
+    const response = await fetch(`${daemonBaseUrl}/api/rooms`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        productId: newRoom.productId,
+        title,
+        acceptanceCriteria: newRoom.acceptanceCriteria
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter(Boolean)
+      })
+    });
+
+    if (!response.ok) {
+      return;
+    }
+
+    const body = (await response.json()) as { room: Room; workspace: WorkspaceSeed };
+    setWorkspace(body.workspace);
+    setSelectedProductId(body.room.productId);
+    setSelectedRoomId(body.room.id);
+    setNewRoom((current) => ({ ...current, title: "", acceptanceCriteria: "" }));
+    setIsCreatingRoom(false);
   };
 
   return (
@@ -375,12 +415,72 @@ export function App() {
             <Button variant="outline" size="icon" type="button" aria-label="Start room" onClick={() => startRoomRun(selectedRoom.id, "dry-run")}>
               <Play size={17} />
             </Button>
-            <Button type="button">
+            <Button
+              type="button"
+              onClick={() => {
+                setIsCreatingRoom((current) => !current);
+                setNewRoom((current) => ({
+                  ...current,
+                  productId: selectedProductId === "all" ? current.productId || workspace.products[0]?.id || "" : selectedProductId
+                }));
+              }}
+            >
               <Hammer size={16} />
               New room
             </Button>
           </div>
         </header>
+
+        {isCreatingRoom ? (
+          <section className="mb-4 rounded-xl border border-stone-200 bg-white p-4 shadow-sm">
+            <div className="mb-3">
+              <p className="text-[11px] font-extrabold uppercase text-stone-500">Create room</p>
+              <h3 className="text-base font-semibold">Assign a task to an elf</h3>
+            </div>
+            <div className="grid gap-3">
+              <label className="grid gap-1 text-sm font-semibold">
+                Project
+                <select
+                  className="h-10 rounded-md border border-stone-200 bg-white px-3 text-sm"
+                  value={newRoom.productId}
+                  onChange={(event) => setNewRoom((current) => ({ ...current, productId: event.target.value }))}
+                >
+                  {workspace.products.map((product) => (
+                    <option key={product.id} value={product.id}>
+                      {product.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="grid gap-1 text-sm font-semibold">
+                Task
+                <input
+                  className="h-10 rounded-md border border-stone-200 bg-white px-3 text-sm"
+                  value={newRoom.title}
+                  onChange={(event) => setNewRoom((current) => ({ ...current, title: event.target.value }))}
+                  placeholder="Fix flaky onboarding test"
+                />
+              </label>
+              <label className="grid gap-1 text-sm font-semibold">
+                Acceptance criteria
+                <Textarea
+                  value={newRoom.acceptanceCriteria}
+                  onChange={(event) => setNewRoom((current) => ({ ...current, acceptanceCriteria: event.target.value }))}
+                  placeholder={"One criterion per line\nRun the narrowest relevant check\nAttach diff and check output"}
+                  rows={4}
+                />
+              </label>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" type="button" onClick={() => setIsCreatingRoom(false)}>
+                  Cancel
+                </Button>
+                <Button type="button" onClick={createRoom} disabled={!newRoom.title.trim() || !newRoom.productId}>
+                  Create room
+                </Button>
+              </div>
+            </div>
+          </section>
+        ) : null}
 
         <div className="grid grid-cols-[repeat(auto-fill,minmax(245px,1fr))] gap-3">
           {visibleRooms.map((room) => (

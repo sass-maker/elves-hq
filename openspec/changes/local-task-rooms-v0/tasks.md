@@ -15,6 +15,8 @@
 - [x] Add git worktree and diff artifact capture.
 - [x] Add worktree-scoped Codex write mode.
 - [x] Add test/check gate execution.
+- [x] Add project-wise room creation from the cockpit.
+- [x] Add daemon-backed task and room creation.
 
 ## Verification
 
@@ -31,4 +33,5 @@
 - [x] `GET /api/runs/:id/diff`
 - [x] `POST /api/runs/:id/check`
 - [x] `GET /api/runs/:id/check-output`
+- [x] `POST /api/rooms`
 - [x] Browser smoke of local cockpit

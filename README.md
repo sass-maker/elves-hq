@@ -29,6 +29,8 @@ Worktree-backed runs create isolated git worktrees under `runs/<run-id>/worktree
 
 Check gates run inside the captured worktree, choose a package script by key (`typecheck` in the UI today), and write output to `runs/<run-id>/check.log`.
 
+Rooms can be created directly in the cockpit. Each room creates a task, assigns the default builder elf, stores acceptance criteria, and can then launch dry-run, read-only Codex, worktree dry-run, or worktree Codex modes.
+
 ## Checks
 
 ```bash

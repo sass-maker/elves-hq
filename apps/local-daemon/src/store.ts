@@ -99,6 +99,13 @@ interface TaskRow {
   priority: Task["priority"];
 }
 
+export interface CreateRoomInput {
+  productId: string;
+  title: string;
+  acceptanceCriteria: string[];
+  assignedElfId?: string;
+}
+
 export class WorkspaceStore {
   private readonly db: DatabaseSync;
 
@@ -157,6 +164,59 @@ export class WorkspaceStore {
       acceptanceCriteria: JSON.parse(row.acceptanceCriteria) as string[],
       priority: row.priority
     };
+  }
+
+  createTaskRoom(input: CreateRoomInput): { task: Task; room: Room } {
+    const title = input.title.trim();
+    if (!title) {
+      throw new Error("Room title is required");
+    }
+
+    const product = this.getProduct(input.productId);
+    const assignedElfId = input.assignedElfId ?? this.defaultBuilderElfId();
+    const elf = this.db.prepare("SELECT * FROM elves WHERE id = ?").get(assignedElfId) as unknown as Elf | undefined;
+    if (!elf) {
+      throw new Error(`Elf not found: ${assignedElfId}`);
+    }
+
+    const criteria = input.acceptanceCriteria.map((item) => item.trim()).filter(Boolean);
+    if (criteria.length === 0) {
+      criteria.push("Founder reviews the room output before accepting it.");
+    }
+
+    const suffix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+    const taskId = `task-${suffix}`;
+    const roomId = `room-${suffix}`;
+    const startedAt = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    const task: Task = {
+      id: taskId,
+      productId: product.id,
+      title,
+      acceptanceCriteria: criteria,
+      priority: "medium"
+    };
+
+    this.db.exec("BEGIN");
+    try {
+      this.db
+        .prepare("INSERT INTO tasks (id, productId, title, acceptanceCriteria, priority) VALUES (?, ?, ?, ?, ?)")
+        .run(task.id, task.productId, task.title, JSON.stringify(task.acceptanceCriteria), task.priority);
+      this.db
+        .prepare(
+          "INSERT INTO rooms (id, product_id, task_id, assigned_elf_id, title, status, started_at, last_activity_at, summary) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        )
+        .run(roomId, product.id, task.id, assignedElfId, title, "idle", startedAt, startedAt, `Room created for ${product.name}. Assign an elf run when ready.`);
+      this.db
+        .prepare("INSERT INTO room_notes (room_id, body, created_at) VALUES (?, ?, ?)")
+        .run(roomId, `Created manually in Elves HQ for ${product.name}.`, new Date().toISOString());
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+
+    this.appendRoomLog(roomId, "info", `Created room for ${product.name}: ${title}`);
+    return { task, room: this.getRoom(roomId) };
   }
 
   createRun(roomId: string, mode: ElfRun["mode"], command: string): ElfRun {
@@ -416,6 +476,14 @@ export class WorkspaceStore {
 
   private updateRoom(roomId: string, status: Room["status"], summary: string) {
     this.db.prepare("UPDATE rooms SET status = ?, summary = ?, last_activity_at = ? WHERE id = ?").run(status, summary, "now", roomId);
+  }
+
+  private defaultBuilderElfId() {
+    const elf = this.db.prepare("SELECT * FROM elves WHERE role = ? ORDER BY name LIMIT 1").get("builder") as unknown as Elf | undefined;
+    if (!elf) {
+      throw new Error("No builder elf exists");
+    }
+    return elf.id;
   }
 
   private seedIfEmpty() {

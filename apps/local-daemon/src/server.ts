@@ -12,7 +12,7 @@ const processManager = new RoomProcessManager(store);
 
 function sendJson(response: ServerResponse, status: number, body: unknown) {
   response.writeHead(status, {
-    "Access-Control-Allow-Origin": "http://127.0.0.1:5177",
+    "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
     "Content-Type": "application/json"
@@ -52,6 +52,13 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/import/fleet-registry") {
       const result = store.importFleetRegistry();
+      sendJson(response, 200, { ...result, workspace: store.getWorkspace() });
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/rooms") {
+      const body = await readJson(request);
+      const result = store.createTaskRoom(readCreateRoomInput(body));
       sendJson(response, 200, { ...result, workspace: store.getWorkspace() });
       return;
     }
@@ -168,4 +175,25 @@ function readCheckScriptKey(body: unknown): CheckScriptKey | undefined {
   }
 
   throw new Error("Unsupported check script key");
+}
+
+function readCreateRoomInput(body: unknown) {
+  if (!body || typeof body !== "object") {
+    throw new Error("Expected JSON body");
+  }
+
+  const record = body as { productId?: unknown; title?: unknown; acceptanceCriteria?: unknown; assignedElfId?: unknown };
+  if (typeof record.productId !== "string") {
+    throw new Error("productId is required");
+  }
+  if (typeof record.title !== "string") {
+    throw new Error("title is required");
+  }
+
+  return {
+    productId: record.productId,
+    title: record.title,
+    acceptanceCriteria: Array.isArray(record.acceptanceCriteria) ? record.acceptanceCriteria.filter((item): item is string => typeof item === "string") : [],
+    assignedElfId: typeof record.assignedElfId === "string" ? record.assignedElfId : undefined
+  };
 }
