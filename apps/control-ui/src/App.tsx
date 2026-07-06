@@ -39,6 +39,7 @@ import {
   type Playbook,
   type Product,
   type ProductMemory,
+  type ProductMemorySection,
   type ProductMemorySectionKey,
   type Room,
   type RoomStatus,
@@ -81,6 +82,15 @@ type PaneLayout = {
   fleet: number;
   rooms: number;
 };
+
+type RoomWorkbenchTab = "logs" | "artifacts" | "notes" | "memory";
+
+const roomWorkbenchTabs: Array<{ id: RoomWorkbenchTab; label: string }> = [
+  { id: "logs", label: "Logs" },
+  { id: "artifacts", label: "Artifacts" },
+  { id: "notes", label: "Notes" },
+  { id: "memory", label: "Memory" }
+];
 
 const defaultPaneLayout: PaneLayout = {
   fleet: 260,
@@ -160,6 +170,7 @@ export function App() {
   const [memoryDrafts, setMemoryDrafts] = useState<Record<string, string>>({});
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
   const [paneLayout, setPaneLayout] = useState<PaneLayout>(readStoredPaneLayout);
+  const [roomWorkbenchTabsById, setRoomWorkbenchTabsById] = useState<Record<string, RoomWorkbenchTab>>({});
   const [newRoom, setNewRoom] = useState({
     productId: seedWorkspace.products[0]?.id ?? "",
     assignedElfId: defaultRoomElfId(seedWorkspace),
@@ -274,6 +285,7 @@ export function App() {
       ? memoryDrafts[selectedMemoryDraftKey]
       : selectedProductMemory?.sections.find((section) => section.key === selectedMemorySection)?.body ?? "";
   const mainGridTemplateColumns = `${paneLayout.fleet}px ${paneLayout.rooms}px minmax(380px, 1fr)`;
+  const selectedRoomWorkbenchTab = selectedRoom ? roomWorkbenchTabsById[selectedRoom.id] ?? "logs" : "logs";
 
   useEffect(() => {
     if (daemonState !== "local" || !selectedRoom?.productId) {
@@ -872,9 +884,11 @@ export function App() {
           productMemory={selectedProductMemory}
           selectedMemorySection={selectedMemorySection}
           memoryDraft={selectedMemorySectionBody}
+          activeWorkbenchTab={selectedRoomWorkbenchTab}
           onSelectMemorySection={setSelectedMemorySection}
           onMemoryDraftChange={(value) => setMemoryDrafts((current) => ({ ...current, [selectedMemoryDraftKey]: value }))}
           onSaveMemory={(section, body) => saveProductMemorySection(selectedRoom.productId, section, body)}
+          onSelectWorkbenchTab={(tab) => setRoomWorkbenchTabsById((current) => ({ ...current, [selectedRoom.id]: tab }))}
           noteDraft={roomNotes[selectedRoom.id] ?? ""}
           onNoteDraftChange={(value) => setRoomNotes((current) => ({ ...current, [selectedRoom.id]: value }))}
           onSaveNote={() => saveRoomNote(selectedRoom.id)}
@@ -1264,9 +1278,11 @@ function RoomDetail({
   productMemory,
   selectedMemorySection,
   memoryDraft,
+  activeWorkbenchTab,
   onSelectMemorySection,
   onMemoryDraftChange,
   onSaveMemory,
+  onSelectWorkbenchTab,
   noteDraft,
   onNoteDraftChange,
   onSaveNote,
@@ -1296,9 +1312,11 @@ function RoomDetail({
   productMemory?: ProductMemory;
   selectedMemorySection: ProductMemorySectionKey;
   memoryDraft: string;
+  activeWorkbenchTab: RoomWorkbenchTab;
   onSelectMemorySection: (section: ProductMemorySectionKey) => void;
   onMemoryDraftChange: (value: string) => void;
   onSaveMemory: (section: ProductMemorySectionKey, body: string) => void;
+  onSelectWorkbenchTab: (tab: RoomWorkbenchTab) => void;
   noteDraft: string;
   onNoteDraftChange: (value: string) => void;
   onSaveNote: () => void;
@@ -1457,6 +1475,22 @@ function RoomDetail({
         </section>
       ) : null}
 
+      <RoomWorkbench
+        room={room}
+        productMemory={productMemory}
+        selectedMemorySection={selectedMemorySection}
+        memoryDraft={memoryDraft}
+        activeMemorySection={activeMemorySection}
+        activeTab={activeWorkbenchTab}
+        noteDraft={noteDraft}
+        onSelectTab={onSelectWorkbenchTab}
+        onSelectMemorySection={onSelectMemorySection}
+        onMemoryDraftChange={onMemoryDraftChange}
+        onSaveMemory={onSaveMemory}
+        onNoteDraftChange={onNoteDraftChange}
+        onSaveNote={onSaveNote}
+      />
+
       {promptPreview ? (
         <section>
           <SectionTitle icon={<ScrollText size={16} />} title="Run prompt" />
@@ -1511,89 +1545,202 @@ function RoomDetail({
         </section>
       ) : null}
 
-      <section>
-        <SectionTitle icon={<ScrollText size={16} />} title="Logs" />
-        <div className="overflow-hidden rounded-lg bg-stone-950 font-mono text-xs text-stone-100">
-          {room.logs.map((log) => (
-            <div className="grid grid-cols-[54px_1fr] gap-3 border-b border-white/5 px-3 py-2 last:border-b-0" key={log.id}>
-              <time className="text-stone-400">{log.time}</time>
-              <span
-                className={cn(
-                  log.level === "success" && "text-emerald-200",
-                  log.level === "warning" && "text-amber-200",
-                  log.level === "error" && "text-red-200"
-                )}
+    </div>
+  );
+}
+
+function RoomWorkbench({
+  room,
+  productMemory,
+  selectedMemorySection,
+  memoryDraft,
+  activeMemorySection,
+  activeTab,
+  noteDraft,
+  onSelectTab,
+  onSelectMemorySection,
+  onMemoryDraftChange,
+  onSaveMemory,
+  onNoteDraftChange,
+  onSaveNote
+}: {
+  room: Room;
+  productMemory?: ProductMemory;
+  selectedMemorySection: ProductMemorySectionKey;
+  memoryDraft: string;
+  activeMemorySection?: ProductMemorySection;
+  activeTab: RoomWorkbenchTab;
+  noteDraft: string;
+  onSelectTab: (tab: RoomWorkbenchTab) => void;
+  onSelectMemorySection: (section: ProductMemorySectionKey) => void;
+  onMemoryDraftChange: (value: string) => void;
+  onSaveMemory: (section: ProductMemorySectionKey, body: string) => void;
+  onNoteDraftChange: (value: string) => void;
+  onSaveNote: () => void;
+}) {
+  return (
+    <section className="rounded-xl border border-stone-200 bg-white p-3">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <SectionTitle icon={<PanelRightOpen size={16} />} title="Room workbench" />
+        <div className="flex rounded-lg border border-stone-200 bg-stone-50 p-1" aria-label="Room workbench tabs">
+          {roomWorkbenchTabs.map((tab) => (
+            <Button
+              className={cn("h-7 px-2 text-[11px]", activeTab === tab.id && "bg-stone-900 text-stone-50 hover:bg-stone-800")}
+              variant="ghost"
+              size="sm"
+              type="button"
+              key={tab.id}
+              aria-pressed={activeTab === tab.id}
+              onClick={() => onSelectTab(tab.id)}
+            >
+              {tab.label}
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      {activeTab === "logs" ? <RoomLogsPanel room={room} /> : null}
+      {activeTab === "artifacts" ? <RoomArtifactsPanel room={room} /> : null}
+      {activeTab === "notes" ? (
+        <RoomNotesPanel room={room} noteDraft={noteDraft} onNoteDraftChange={onNoteDraftChange} onSaveNote={onSaveNote} />
+      ) : null}
+      {activeTab === "memory" ? (
+        <RoomMemoryPanel
+          productMemory={productMemory}
+          selectedMemorySection={selectedMemorySection}
+          memoryDraft={memoryDraft}
+          activeMemorySection={activeMemorySection}
+          onSelectMemorySection={onSelectMemorySection}
+          onMemoryDraftChange={onMemoryDraftChange}
+          onSaveMemory={onSaveMemory}
+        />
+      ) : null}
+    </section>
+  );
+}
+
+function RoomLogsPanel({ room }: { room: Room }) {
+  return (
+    <div className="max-h-96 overflow-auto rounded-lg bg-stone-950 font-mono text-xs text-stone-100">
+      {room.logs.length > 0 ? (
+        room.logs.map((log) => (
+          <div className="grid grid-cols-[54px_1fr] gap-3 border-b border-white/5 px-3 py-2 last:border-b-0" key={log.id}>
+            <time className="text-stone-400">{log.time}</time>
+            <span
+              className={cn(
+                log.level === "success" && "text-emerald-200",
+                log.level === "warning" && "text-amber-200",
+                log.level === "error" && "text-red-200"
+              )}
+            >
+              {log.message}
+            </span>
+          </div>
+        ))
+      ) : (
+        <div className="px-3 py-2 text-stone-400">No logs yet.</div>
+      )}
+    </div>
+  );
+}
+
+function RoomArtifactsPanel({ room }: { room: Room }) {
+  return (
+    <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
+      {room.artifacts.length > 0 ? (
+        room.artifacts.map((artifact, index) => (
+          <ArtifactRow key={artifact.id} artifact={artifact} last={index === room.artifacts.length - 1} />
+        ))
+      ) : (
+        <p className="p-3 text-sm text-stone-500">No artifacts captured yet.</p>
+      )}
+    </div>
+  );
+}
+
+function RoomNotesPanel({
+  room,
+  noteDraft,
+  onNoteDraftChange,
+  onSaveNote
+}: {
+  room: Room;
+  noteDraft: string;
+  onNoteDraftChange: (value: string) => void;
+  onSaveNote: () => void;
+}) {
+  return (
+    <div className="grid gap-3 rounded-xl border border-stone-200 bg-white p-3">
+      {room.notes.length > 0 ? (
+        room.notes.map((note) => (
+          <p className="text-sm leading-6 text-stone-600" key={note}>{note}</p>
+        ))
+      ) : (
+        <p className="text-sm text-stone-500">No founder notes yet.</p>
+      )}
+      <Separator />
+      <Textarea value={noteDraft} onChange={(event) => onNoteDraftChange(event.target.value)} placeholder="Add context for this room..." />
+      <div className="flex justify-end">
+        <Button type="button" size="sm" onClick={onSaveNote} disabled={noteDraft.trim().length === 0}>
+          Add room note
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function RoomMemoryPanel({
+  productMemory,
+  selectedMemorySection,
+  memoryDraft,
+  activeMemorySection,
+  onSelectMemorySection,
+  onMemoryDraftChange,
+  onSaveMemory
+}: {
+  productMemory?: ProductMemory;
+  selectedMemorySection: ProductMemorySectionKey;
+  memoryDraft: string;
+  activeMemorySection?: ProductMemorySection;
+  onSelectMemorySection: (section: ProductMemorySectionKey) => void;
+  onMemoryDraftChange: (value: string) => void;
+  onSaveMemory: (section: ProductMemorySectionKey, body: string) => void;
+}) {
+  return (
+    <div className="grid gap-3 rounded-xl border border-stone-200 bg-white p-3">
+      {productMemory ? (
+        <>
+          <div className="flex flex-wrap gap-2">
+            {productMemory.sections.map((section) => (
+              <Button
+                variant={section.key === selectedMemorySection ? "default" : "outline"}
+                size="sm"
+                type="button"
+                key={section.key}
+                onClick={() => onSelectMemorySection(section.key)}
               >
-                {log.message}
-              </span>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section>
-        <SectionTitle icon={<FileText size={16} />} title="Artifacts" />
-        <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
-          {room.artifacts.map((artifact, index) => (
-            <ArtifactRow key={artifact.id} artifact={artifact} last={index === room.artifacts.length - 1} />
-          ))}
-        </div>
-      </section>
-
-      <section>
-        <SectionTitle icon={<BookOpenText size={16} />} title="Product memory" />
-        <div className="grid gap-3 rounded-xl border border-stone-200 bg-white p-3">
-          {productMemory ? (
-            <>
-              <div className="flex flex-wrap gap-2">
-                {productMemory.sections.map((section) => (
-                  <Button
-                    variant={section.key === selectedMemorySection ? "default" : "outline"}
-                    size="sm"
-                    type="button"
-                    key={section.key}
-                    onClick={() => onSelectMemorySection(section.key)}
-                  >
-                    {section.title}
-                  </Button>
-                ))}
-              </div>
-              <Textarea
-                value={memoryDraft}
-                onChange={(event) => onMemoryDraftChange(event.target.value)}
-                rows={8}
-                placeholder="Add durable product context..."
-              />
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-xs text-stone-500">
-                  {activeMemorySection?.filename ?? selectedMemorySection}. Local Markdown memory for {productMemory.productName}.
-                </span>
-                <Button type="button" size="sm" onClick={() => onSaveMemory(selectedMemorySection, memoryDraft)}>
-                  Save memory
-                </Button>
-              </div>
-            </>
-          ) : (
-            <p className="text-sm text-stone-500">Product memory loads from the local daemon when available.</p>
-          )}
-        </div>
-      </section>
-
-      <section>
-        <SectionTitle icon={<Activity size={16} />} title="Room documentation" />
-        <div className="grid gap-3 rounded-xl border border-stone-200 bg-white p-3">
-          {room.notes.map((note) => (
-            <p className="text-sm leading-6 text-stone-600" key={note}>{note}</p>
-          ))}
-          <Separator />
-          <Textarea value={noteDraft} onChange={(event) => onNoteDraftChange(event.target.value)} placeholder="Add context for this room..." />
-          <div className="flex justify-end">
-            <Button type="button" size="sm" onClick={onSaveNote} disabled={noteDraft.trim().length === 0}>
-              Add room note
+                {section.title}
+              </Button>
+            ))}
+          </div>
+          <Textarea
+            value={memoryDraft}
+            onChange={(event) => onMemoryDraftChange(event.target.value)}
+            rows={8}
+            placeholder="Add durable product context..."
+          />
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-xs text-stone-500">
+              {activeMemorySection?.filename ?? selectedMemorySection}. Local Markdown memory for {productMemory.productName}.
+            </span>
+            <Button type="button" size="sm" onClick={() => onSaveMemory(selectedMemorySection, memoryDraft)}>
+              Save memory
             </Button>
           </div>
-        </div>
-      </section>
+        </>
+      ) : (
+        <p className="text-sm text-stone-500">Product memory loads from the local daemon when available.</p>
+      )}
     </div>
   );
 }

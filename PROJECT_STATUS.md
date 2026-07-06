@@ -33,7 +33,7 @@ Elves HQ is a local-first founder cockpit for running Codex elves across a produ
 - 2026-07-06 - Project created as a fresh local-first replacement direction for SaaS Maker's original operating-cockpit ambition.
 - 2026-07-06 - V0 OpenSpec change `local-task-rooms-v0` started.
 - 2026-07-06 - Local daemon and root SQLite store added for persisted workspace/room data and room notes.
-- 2026-07-07 - Task-room creation, explicit elf assignment, isolated worktree runs, interrupted-run recovery, diff capture, captured prompts, editable local product memory, built-in playbooks, structured elf asks and founder answers, room transcripts, fix-request retry context, local Daily Brief, check gates, CodeVetter gate adapter, generated worktree cleanup, visible room gate checklist, persistent pane layout controls, a signal-backed Needs Me queue, founder decision actions, and approval guards for failed or missing gates landed in the local cockpit.
+- 2026-07-07 - Task-room creation, explicit elf assignment, isolated worktree runs, interrupted-run recovery, diff capture, captured prompts, editable local product memory, built-in playbooks, structured elf asks and founder answers, room workbench tabs, room transcripts, fix-request retry context, local Daily Brief, check gates, CodeVetter gate adapter, generated worktree cleanup, visible room gate checklist, persistent pane layout controls, a signal-backed Needs Me queue, founder decision actions, and approval guards for failed or missing gates landed in the local cockpit.
 
 ## Products
 
@@ -51,6 +51,7 @@ Elves HQ is a local-first founder cockpit for running Codex elves across a produ
 - Room-aware run prompts are captured to `runs/<run-id>/prompt.md` and include acceptance criteria, founder notes, prior decisions, artifacts, and recent logs.
 - Room runs can open founder asks by emitting `ELF_ASK: {"question":"...","options":["..."],"recommendation":"..."}`; valid asks set the room to `asking` and surface in Needs Me.
 - Founder can answer an elf ask from the room by selecting an option; the answer clears the ask, returns the room to idle, and is persisted as a decision plus room note for future run prompts.
+- Selected rooms organize detailed evidence into workbench tabs for Logs, Artifacts, Notes, and Product Memory while keeping the core room status and actions visible.
 - Room transcripts generate local Markdown under `runs/room-transcripts/<room-id>.md`, include task/room evidence, attach as room artifacts, and can be previewed from the cockpit.
 - Product memory is stored as ignored local Markdown under `memory/<product-slug>/`, editable in the room cockpit, and injected into generated run prompts.
 - Built-in playbooks provide reusable workflows for small features, bugs, failing tests, diff review, safe refactors, and daily briefs; selected playbooks are persisted on rooms and injected into prompts.
