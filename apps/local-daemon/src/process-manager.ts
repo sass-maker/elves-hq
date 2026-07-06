@@ -1,12 +1,13 @@
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import type { ElfRun } from "@elves-hq/core";
 import { WorkspaceStore } from "./store";
 
-const fleetRoot = fileURLToPath(new URL("../../../../", import.meta.url));
+const projectRoot = fileURLToPath(new URL("../../../", import.meta.url));
 const runTimeoutMs = Number(process.env.ELVES_HQ_RUN_TIMEOUT_MS ?? 120_000);
+const runsRoot = fileURLToPath(new URL("../../../runs/", import.meta.url));
 
 export interface StartRunOptions {
   mode: ElfRun["mode"];
@@ -17,6 +18,7 @@ interface RunningProcess {
   roomId: string;
   child: ChildProcessWithoutNullStreams;
   timeout: NodeJS.Timeout;
+  worktreePath?: string;
 }
 
 export class RoomProcessManager {
@@ -34,7 +36,15 @@ export class RoomProcessManager {
     const task = this.store.getTask(room.taskId);
     const command = this.buildCommandDescription(product.localPath, task.title, options);
     const run = this.store.createRun(room.id, options.mode, command);
-    const child = this.spawnRun(product.localPath, task.title, options);
+    let worktree: { path: string; branchName: string } | undefined;
+    try {
+      worktree = this.createWorktreeIfNeeded(run, product.localPath, task.title, options.mode);
+    } catch (error) {
+      this.store.appendRoomLog(room.id, "error", error instanceof Error ? error.message : "Failed to create worktree.");
+      this.store.finishRun(run.id, "failed", null);
+      throw error;
+    }
+    const child = this.spawnRun(product.localPath, task.title, options, worktree?.path);
     const timeout = setTimeout(() => {
       if (!this.running.has(run.id)) {
         return;
@@ -43,7 +53,7 @@ export class RoomProcessManager {
       child.kill("SIGTERM");
     }, runTimeoutMs);
 
-    this.running.set(run.id, { roomId: room.id, child, timeout });
+    this.running.set(run.id, { roomId: room.id, child, timeout, worktreePath: worktree?.path });
     this.attachLogging(run, child);
 
     return { run, room: this.store.getRoom(room.id) };
@@ -60,8 +70,9 @@ export class RoomProcessManager {
     return { ok: true };
   }
 
-  private spawnRun(localPath: string, taskTitle: string, options: StartRunOptions) {
-    const cwd = resolve(fleetRoot, localPath);
+  private spawnRun(localPath: string, taskTitle: string, options: StartRunOptions, worktreePath?: string) {
+    const cwd = resolve(projectRoot, localPath);
+    const runCwd = worktreePath ?? cwd;
 
     if (options.mode === "dry-run") {
       return spawn(
@@ -84,22 +95,56 @@ export class RoomProcessManager {
             "tick();"
           ].join("\n")
         ],
-        { cwd: existsSync(cwd) ? cwd : fleetRoot }
+        { cwd: existsSync(cwd) ? cwd : projectRoot }
+      );
+    }
+
+    if (options.mode === "worktree-dry-run") {
+      return spawn(
+        process.execPath,
+        [
+          "-e",
+          [
+            "const { writeFileSync } = require('node:fs');",
+            "const path = 'ELVES_HQ_ROOM_RUN.md';",
+            "writeFileSync(path, [",
+            JSON.stringify(`# Elves HQ worktree dry run`) + ",",
+            JSON.stringify("") + ",",
+            JSON.stringify(`Task: ${taskTitle}`) + ",",
+            JSON.stringify("") + ",",
+            JSON.stringify("This file proves the elf wrote only inside an isolated git worktree.") + ",",
+            "].join('\\n'));",
+            "console.log(`Wrote ${path} in isolated worktree.`);"
+          ].join("\n")
+        ],
+        { cwd: runCwd }
       );
     }
 
     const prompt = [
-      options.prompt?.trim() || `Inspect the task "${taskTitle}" and report the safest next step. Do not edit files.`,
+      options.prompt?.trim() || defaultPrompt(taskTitle, options.mode),
       "",
-      "You are running from Elves HQ in read-only mode.",
-      "Do not modify files, commit, push, deploy, migrate, access secrets, or make irreversible changes.",
+      options.mode === "codex-worktree"
+        ? "You are running from Elves HQ inside an isolated git worktree. You may edit files only in this worktree."
+        : "You are running from Elves HQ in read-only mode.",
+      "Do not commit, push, deploy, migrate, access secrets, spend money, message users, or make irreversible changes.",
       "Return a concise status update with concrete files or commands you inspected."
     ].join("\n");
 
     return spawn(
       "codex",
-      ["--ask-for-approval", "never", "exec", "--json", "--sandbox", "read-only", "-C", existsSync(cwd) ? cwd : fleetRoot, prompt],
-      { cwd: existsSync(cwd) ? cwd : fleetRoot }
+      [
+        "--ask-for-approval",
+        "never",
+        "exec",
+        "--json",
+        "--sandbox",
+        options.mode === "codex-worktree" ? "workspace-write" : "read-only",
+        "-C",
+        existsSync(runCwd) ? runCwd : projectRoot,
+        prompt
+      ],
+      { cwd: existsSync(runCwd) ? runCwd : projectRoot }
     );
   }
 
@@ -119,6 +164,10 @@ export class RoomProcessManager {
     });
 
     child.on("close", (code, signal) => {
+      const running = this.running.get(run.id);
+      if (running?.worktreePath && !signal) {
+        this.captureWorktreeDiff(run, running.worktreePath);
+      }
       this.clearRun(run.id);
       if (signal) {
         this.store.finishRun(run.id, "killed", code);
@@ -149,6 +198,82 @@ export class RoomProcessManager {
     if (options.mode === "dry-run") {
       return `node dry-run (${taskTitle})`;
     }
+    if (options.mode === "worktree-dry-run") {
+      return `node worktree-dry-run (${taskTitle})`;
+    }
+    if (options.mode === "codex-worktree") {
+      return `codex --ask-for-approval never exec --json --sandbox workspace-write -C <isolated-worktree>`;
+    }
     return `codex --ask-for-approval never exec --json --sandbox read-only -C ${localPath}`;
   }
+
+  private createWorktreeIfNeeded(run: ElfRun, localPath: string, taskTitle: string, mode: ElfRun["mode"]) {
+    if (mode !== "worktree-dry-run" && mode !== "codex-worktree") {
+      return undefined;
+    }
+
+    const sourcePath = resolve(projectRoot, localPath);
+    if (!existsSync(sourcePath)) {
+      throw new Error(`Product path does not exist: ${sourcePath}`);
+    }
+
+    const gitCheck = spawnSync("git", ["-C", sourcePath, "rev-parse", "--show-toplevel"], { encoding: "utf8" });
+    if (gitCheck.status !== 0) {
+      throw new Error(`Product path is not a git repository: ${sourcePath}`);
+    }
+
+    const branchName = `elves/${run.roomId}/${run.id}`;
+    const worktreePath = resolve(runsRoot, run.id, "worktree");
+    mkdirSync(dirname(worktreePath), { recursive: true });
+
+    const result = spawnSync("git", ["-C", sourcePath, "worktree", "add", "-b", branchName, worktreePath, "HEAD"], {
+      encoding: "utf8"
+    });
+
+    if (result.status !== 0) {
+      throw new Error(result.stderr.trim() || `Failed to create git worktree for ${taskTitle}`);
+    }
+
+    this.store.appendRoomLog(run.roomId, "success", `Created isolated worktree ${worktreePath} on branch ${branchName}.`);
+    return { path: worktreePath, branchName };
+  }
+
+  private captureWorktreeDiff(run: ElfRun, worktreePath: string) {
+    const intentToAdd = spawnSync("git", ["-C", worktreePath, "add", "-N", "."], { encoding: "utf8" });
+    if (intentToAdd.status !== 0) {
+      this.store.appendRoomLog(run.roomId, "warning", intentToAdd.stderr.trim() || "Could not mark untracked files for diff capture.");
+    }
+
+    const status = spawnSync("git", ["-C", worktreePath, "status", "--short"], { encoding: "utf8" });
+    const diff = spawnSync("git", ["-C", worktreePath, "diff", "--", "."], { encoding: "utf8", maxBuffer: 1024 * 1024 * 10 });
+
+    const statusText = status.stdout.trim();
+    const diffText = diff.stdout.trim();
+
+    if (!statusText && !diffText) {
+      this.store.appendRoomLog(run.roomId, "info", "No worktree diff detected.");
+      return;
+    }
+
+    const diffPath = fileURLToPath(new URL(`../../../runs/${run.id}/diff.patch`, import.meta.url));
+    mkdirSync(dirname(diffPath), { recursive: true });
+    writeFileSync(diffPath, diffText ? `${diffText}\n` : `# No textual diff captured\n# git status:\n${statusText}\n`);
+
+    const changedCount = statusText ? statusText.split(/\r?\n/).filter(Boolean).length : 0;
+    this.store.addArtifact(run.roomId, {
+      type: "diff",
+      title: `Worktree diff for ${run.id}`,
+      summary: `${changedCount} changed file${changedCount === 1 ? "" : "s"} captured at ${diffPath}`,
+      status: "ready"
+    });
+    this.store.appendRoomLog(run.roomId, "success", `Captured worktree diff artifact with ${changedCount} changed file${changedCount === 1 ? "" : "s"}.`);
+  }
+}
+
+function defaultPrompt(taskTitle: string, mode: ElfRun["mode"]) {
+  if (mode === "codex-worktree") {
+    return `Work on the task "${taskTitle}" in the smallest safe way. Keep changes scoped and leave a concise summary.`;
+  }
+
+  return `Inspect the task "${taskTitle}" and report the safest next step. Do not edit files.`;
 }

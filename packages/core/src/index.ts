@@ -79,7 +79,7 @@ export interface Room {
 export interface ElfRun {
   id: string;
   roomId: string;
-  mode: "dry-run" | "codex-readonly";
+  mode: "dry-run" | "codex-readonly" | "worktree-dry-run" | "codex-worktree";
   status: "running" | "completed" | "failed" | "killed";
   command: string;
   startedAt: string;

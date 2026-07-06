@@ -25,6 +25,8 @@ pnpm dev:ui
 
 The UI runs on `http://127.0.0.1:5177/`. The local daemon runs on `http://127.0.0.1:4327/` and stores local room data in `data/elves.db`. Room runs default to a 120 second runtime cap; override with `ELVES_HQ_RUN_TIMEOUT_MS`.
 
+Worktree-backed runs create isolated git worktrees under `runs/<run-id>/worktree` and captured patches at `runs/<run-id>/diff.patch`. The `runs/` directory is local-only and ignored.
+
 ## Checks
 
 ```bash

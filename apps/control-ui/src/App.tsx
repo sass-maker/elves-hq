@@ -11,7 +11,6 @@ import {
   MessageSquare,
   PanelRightOpen,
   Play,
-  RotateCcw,
   Download,
   ScrollText,
   Sparkles,
@@ -82,6 +81,7 @@ export function App() {
   const [selectedRoomId, setSelectedRoomId] = useState<string>(seedWorkspace.rooms[1]?.id ?? "");
   const [roomNotes, setRoomNotes] = useState<Record<string, string>>({});
   const [roomRuns, setRoomRuns] = useState<Record<string, ElfRun[]>>({});
+  const [diffPreview, setDiffPreview] = useState<Record<string, string>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -255,6 +255,23 @@ export function App() {
     }
   };
 
+  const openLatestDiff = async (roomId: string) => {
+    const run = roomRuns[roomId]?.find((item) => item.mode.includes("worktree") && item.status === "completed");
+    if (!run) {
+      setDiffPreview((current) => ({ ...current, [roomId]: "No completed worktree run has a captured diff yet." }));
+      return;
+    }
+
+    const response = await fetch(`${daemonBaseUrl}/api/runs/${run.id}/diff`);
+    if (!response.ok) {
+      setDiffPreview((current) => ({ ...current, [roomId]: "No diff file was found for the latest worktree run." }));
+      return;
+    }
+
+    const body = (await response.json()) as { diff: string };
+    setDiffPreview((current) => ({ ...current, [roomId]: body.diff || "Diff file is empty." }));
+  };
+
   const importFleetRegistry = async () => {
     const response = await fetch(`${daemonBaseUrl}/api/import/fleet-registry`, { method: "POST" });
     if (!response.ok) {
@@ -357,11 +374,14 @@ export function App() {
           room={selectedRoom}
           workspace={workspace}
           runs={roomRuns[selectedRoom.id] ?? []}
+          diffPreview={diffPreview[selectedRoom.id]}
           noteDraft={roomNotes[selectedRoom.id] ?? ""}
           onNoteDraftChange={(value) => setRoomNotes((current) => ({ ...current, [selectedRoom.id]: value }))}
           onSaveNote={() => saveRoomNote(selectedRoom.id)}
           onStartDryRun={() => startRoomRun(selectedRoom.id, "dry-run")}
           onStartCodexReadOnly={() => startRoomRun(selectedRoom.id, "codex-readonly")}
+          onStartMode={(mode) => startRoomRun(selectedRoom.id, mode)}
+          onOpenDiff={() => openLatestDiff(selectedRoom.id)}
           onKillRun={() => killLatestRun(selectedRoom.id)}
         />
       </section>
@@ -463,21 +483,27 @@ function RoomDetail({
   room,
   workspace,
   runs,
+  diffPreview,
   noteDraft,
   onNoteDraftChange,
   onSaveNote,
   onStartDryRun,
   onStartCodexReadOnly,
+  onStartMode,
+  onOpenDiff,
   onKillRun
 }: {
   room: Room;
   workspace: WorkspaceSeed;
   runs: ElfRun[];
+  diffPreview?: string;
   noteDraft: string;
   onNoteDraftChange: (value: string) => void;
   onSaveNote: () => void;
   onStartDryRun: () => void;
   onStartCodexReadOnly: () => void;
+  onStartMode: (mode: ElfRun["mode"]) => void;
+  onOpenDiff: () => void;
   onKillRun: () => void;
 }) {
   const product = roomProduct(workspace, room);
@@ -539,11 +565,12 @@ function RoomDetail({
         </div>
         <div>
           <SectionTitle icon={<PanelRightOpen size={16} />} title="Actions" />
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onStartDryRun}><Play size={15} />Dry</Button>
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onStartCodexReadOnly}><SquareTerminal size={15} />Read</Button>
-            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button"><GitBranch size={15} />Diff</Button>
-            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button"><RotateCcw size={15} />Retry</Button>
+            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onStartMode("worktree-dry-run")}><GitBranch size={15} />Draft</Button>
+            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onStartMode("codex-worktree")}><Hammer size={15} />Build</Button>
+            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onOpenDiff}><GitBranch size={15} />Diff</Button>
             <Button className="min-w-0 px-2" variant="destructive" size="sm" type="button" onClick={onKillRun} disabled={!activeRun}><CircleStop size={15} />Kill</Button>
           </div>
         </div>
@@ -566,6 +593,15 @@ function RoomDetail({
               </div>
             ))}
           </div>
+        </section>
+      ) : null}
+
+      {diffPreview ? (
+        <section>
+          <SectionTitle icon={<GitBranch size={16} />} title="Diff preview" />
+          <pre className="max-h-72 overflow-auto rounded-lg bg-stone-950 p-3 text-xs leading-5 text-stone-100">
+            <code>{diffPreview}</code>
+          </pre>
         </section>
       ) : null}
 

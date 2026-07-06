@@ -168,7 +168,7 @@ export class WorkspaceStore {
         "INSERT INTO elf_runs (id, room_id, mode, status, command, started_at, ended_at, exit_code) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL)"
       )
       .run(runId, room.id, mode, "running", command, startedAt);
-    this.updateRoom(room.id, "working", `Started ${mode === "codex-readonly" ? "Codex read-only" : "local dry"} run ${runId}.`);
+    this.updateRoom(room.id, "working", `Started ${humanRunMode(mode)} run ${runId}.`);
     this.appendRoomLog(room.id, "info", `Started ${mode} run: ${command}`);
 
     return {
@@ -212,6 +212,15 @@ export class WorkspaceStore {
     this.db.prepare("UPDATE rooms SET last_activity_at = ? WHERE id = ?").run(time, roomId);
 
     return { id, time, level, message };
+  }
+
+  addArtifact(roomId: string, artifact: Omit<Artifact, "id">): Artifact {
+    const id = `art-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    this.db
+      .prepare("INSERT INTO artifacts (id, room_id, type, title, summary, status) VALUES (?, ?, ?, ?, ?, ?)")
+      .run(id, roomId, artifact.type, artifact.title, artifact.summary, artifact.status);
+
+    return { id, ...artifact };
   }
 
   listRuns(roomId: string): ElfRun[] {
@@ -468,6 +477,19 @@ export class WorkspaceStore {
       this.db.exec("ROLLBACK");
       throw error;
     }
+  }
+}
+
+function humanRunMode(mode: ElfRun["mode"]) {
+  switch (mode) {
+    case "codex-readonly":
+      return "Codex read-only";
+    case "worktree-dry-run":
+      return "worktree dry";
+    case "codex-worktree":
+      return "Codex worktree";
+    case "dry-run":
+      return "local dry";
   }
 }
 

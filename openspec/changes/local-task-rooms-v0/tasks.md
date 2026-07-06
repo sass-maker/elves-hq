@@ -12,7 +12,8 @@
 - [x] Add dry-run launch/log capture to local daemon.
 - [x] Add read-only Codex launch/log capture to local daemon.
 - [x] Add run kill endpoint and default runtime cap.
-- [ ] Add git worktree and diff artifact capture.
+- [x] Add git worktree and diff artifact capture.
+- [x] Add worktree-scoped Codex write mode.
 - [ ] Add test/check gate execution.
 
 ## Verification
@@ -26,4 +27,6 @@
 - [x] `POST /api/rooms/:id/runs/start` dry run
 - [x] `POST /api/rooms/:id/runs/start` read-only Codex start
 - [x] `POST /api/runs/:id/kill`
+- [x] `POST /api/rooms/:id/runs/start` worktree dry run
+- [x] `GET /api/runs/:id/diff`
 - [x] Browser smoke of local cockpit

@@ -68,3 +68,16 @@ The V0 daemon MUST be able to start, log, persist, and stop room-scoped runs.
 - **THEN** the daemon launches `codex exec` with read-only sandboxing
 - **AND** Codex output is appended to room logs
 - **AND** the daemon can stop the process if the founder kills it or it exceeds the runtime cap
+
+#### Scenario: Founder starts a worktree-backed run
+
+- **WHEN** the founder starts a worktree-backed room run
+- **THEN** the daemon creates an isolated git worktree and branch for the run
+- **AND** process output is appended to room logs
+- **AND** any resulting diff is captured as a room artifact
+- **AND** the original product checkout remains clean
+
+#### Scenario: Founder opens a captured diff
+
+- **WHEN** a worktree run has captured a diff
+- **THEN** the daemon can return the patch for preview in the room

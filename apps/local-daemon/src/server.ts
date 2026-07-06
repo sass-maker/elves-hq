@@ -1,9 +1,12 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { existsSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import type { ElfRun } from "@elves-hq/core";
 import { RoomProcessManager } from "./process-manager";
 import { WorkspaceStore } from "./store";
 
 const port = Number(process.env.ELVES_HQ_DAEMON_PORT ?? 4327);
+const runsRoot = fileURLToPath(new URL("../../../runs/", import.meta.url));
 const store = new WorkspaceStore();
 const processManager = new RoomProcessManager(store);
 
@@ -75,6 +78,24 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    const diffMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/diff$/);
+    if (request.method === "GET" && diffMatch) {
+      const runId = diffMatch[1];
+      if (!/^run-[a-z0-9-]+$/i.test(runId)) {
+        sendJson(response, 400, { error: "Invalid run id" });
+        return;
+      }
+
+      const diffPath = fileURLToPath(new URL(`${runId}/diff.patch`, `file://${runsRoot.endsWith("/") ? runsRoot : `${runsRoot}/`}`));
+      if (!existsSync(diffPath)) {
+        sendJson(response, 404, { error: "No diff captured for this run" });
+        return;
+      }
+
+      sendJson(response, 200, { runId, diff: readFileSync(diffPath, "utf8") });
+      return;
+    }
+
     const noteMatch = url.pathname.match(/^\/api\/rooms\/([^/]+)\/notes$/);
     if (request.method === "POST" && noteMatch) {
       const body = await readJson(request);
@@ -103,7 +124,7 @@ function readRunMode(body: unknown): ElfRun["mode"] {
   }
 
   const mode = (body as { mode?: unknown }).mode;
-  if (mode === "dry-run" || mode === "codex-readonly") {
+  if (mode === "dry-run" || mode === "codex-readonly" || mode === "worktree-dry-run" || mode === "codex-worktree") {
     return mode;
   }
 
