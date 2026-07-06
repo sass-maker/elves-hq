@@ -31,6 +31,8 @@ Check gates run inside the captured worktree, choose a package script by key (`t
 
 Rooms can be created directly in the cockpit. Each room creates a task, assigns the default builder elf, stores acceptance criteria, and can then launch dry-run, read-only Codex, worktree dry-run, or worktree Codex modes.
 
+The Needs Me queue is generated from room signals, not generic activity. It surfaces unresolved asks, blocked or failed runs, failed gates, and ready artifacts through the cockpit and `GET /api/needs-me`.
+
 ## Checks
 
 ```bash

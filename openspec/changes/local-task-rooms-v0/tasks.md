@@ -17,6 +17,7 @@
 - [x] Add test/check gate execution.
 - [x] Add project-wise room creation from the cockpit.
 - [x] Add daemon-backed task and room creation.
+- [x] Add signal-backed Needs Me decision queue.
 
 ## Verification
 
@@ -34,4 +35,5 @@
 - [x] `POST /api/runs/:id/check`
 - [x] `GET /api/runs/:id/check-output`
 - [x] `POST /api/rooms`
+- [x] `GET /api/needs-me`
 - [x] Browser smoke of local cockpit

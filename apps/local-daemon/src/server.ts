@@ -50,6 +50,11 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    if (request.method === "GET" && url.pathname === "/api/needs-me") {
+      sendJson(response, 200, { items: store.getDecisionItems() });
+      return;
+    }
+
     if (request.method === "POST" && url.pathname === "/api/import/fleet-registry") {
       const result = store.importFleetRegistry();
       sendJson(response, 200, { ...result, workspace: store.getWorkspace() });

@@ -31,6 +31,17 @@ Room progress MUST be represented by concrete logs, artifacts, asks, or decision
 - **WHEN** a room is marked ready
 - **THEN** the room detail shows artifacts or gate output that explain what is ready for review
 
+### Requirement: Needs Me queue
+
+Elves HQ MUST expose one founder-facing queue for rooms that need judgment.
+
+#### Scenario: Founder opens the cockpit
+
+- **WHEN** rooms have unresolved asks, blocked runs, failed runs, failed gates, or ready artifacts
+- **THEN** the cockpit shows those items in a Needs Me queue
+- **AND** each item includes the room, project, risk, reason, recommendation, and evidence
+- **AND** selecting an item opens the relevant room
+
 ### Requirement: Local-first V0
 
 The V0 cockpit MUST run locally without cloud auth or hosted API dependencies.

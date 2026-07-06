@@ -3,9 +3,11 @@ import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import {
+  buildDecisionItems,
   seedWorkspace,
   type Artifact,
   type Decision,
+  type DecisionItem,
   type Elf,
   type ElfRun,
   type Product,
@@ -134,6 +136,10 @@ export class WorkspaceStore {
     const rooms = roomRows.map((row) => this.hydrateRoom(row));
 
     return { products, elves, tasks, rooms };
+  }
+
+  getDecisionItems(): DecisionItem[] {
+    return buildDecisionItems(this.getWorkspace().rooms);
   }
 
   getRoom(roomId: string): Room {

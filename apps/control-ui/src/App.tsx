@@ -1,5 +1,6 @@
 import {
   Activity,
+  ArrowRight,
   CheckCircle2,
   CircleStop,
   ClipboardCheck,
@@ -12,12 +13,13 @@ import {
   PanelRightOpen,
   Play,
   Download,
+  Inbox,
   ScrollText,
   Sparkles,
   SquareTerminal,
   TestTube2
 } from "lucide-react";
-import { seedWorkspace, statusLabels, type Artifact, type ElfRun, type Product, type Room, type RoomStatus, type WorkspaceSeed } from "@elves-hq/core";
+import { buildDecisionItems, seedWorkspace, statusLabels, type Artifact, type DecisionItem, type ElfRun, type Product, type Room, type RoomStatus, type WorkspaceSeed } from "@elves-hq/core";
 import { useEffect, useMemo, useState } from "react";
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
@@ -83,6 +85,7 @@ export function App() {
   const [roomRuns, setRoomRuns] = useState<Record<string, ElfRun[]>>({});
   const [diffPreview, setDiffPreview] = useState<Record<string, string>>({});
   const [checkPreview, setCheckPreview] = useState<Record<string, string>>({});
+  const [decisionItems, setDecisionItems] = useState<DecisionItem[]>(buildDecisionItems(seedWorkspace.rooms));
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
   const [newRoom, setNewRoom] = useState({
     productId: seedWorkspace.products[0]?.id ?? "",
@@ -93,22 +96,24 @@ export function App() {
   useEffect(() => {
     let cancelled = false;
 
-    fetch(`${daemonBaseUrl}/api/workspace`)
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error(`Daemon returned ${response.status}`);
+    Promise.all([fetch(`${daemonBaseUrl}/api/workspace`), fetch(`${daemonBaseUrl}/api/needs-me`)])
+      .then(async ([workspaceResponse, needsResponse]) => {
+        if (!workspaceResponse.ok || !needsResponse.ok) {
+          throw new Error(`Daemon returned ${workspaceResponse.status}/${needsResponse.status}`);
         }
-        return (await response.json()) as WorkspaceSeed;
+        return (await Promise.all([workspaceResponse.json(), needsResponse.json()])) as [WorkspaceSeed, { items: DecisionItem[] }];
       })
-      .then((nextWorkspace) => {
+      .then(([nextWorkspace, needsBody]) => {
         if (!cancelled) {
           setWorkspace(nextWorkspace);
+          setDecisionItems(needsBody.items);
           setDaemonState("local");
         }
       })
       .catch(() => {
         if (!cancelled) {
           setWorkspace(seedWorkspace);
+          setDecisionItems(buildDecisionItems(seedWorkspace.rooms));
           setDaemonState("fallback");
         }
       });
@@ -127,22 +132,25 @@ export function App() {
 
     const refresh = async () => {
       try {
-        const [workspaceResponse, runsResponse] = await Promise.all([
+        const [workspaceResponse, runsResponse, needsResponse] = await Promise.all([
           fetch(`${daemonBaseUrl}/api/workspace`),
-          fetch(`${daemonBaseUrl}/api/rooms/${selectedRoomId}/runs`)
+          fetch(`${daemonBaseUrl}/api/rooms/${selectedRoomId}/runs`),
+          fetch(`${daemonBaseUrl}/api/needs-me`)
         ]);
 
-        if (!workspaceResponse.ok || !runsResponse.ok) {
+        if (!workspaceResponse.ok || !runsResponse.ok || !needsResponse.ok) {
           return;
         }
 
-        const [nextWorkspace, runsBody] = (await Promise.all([workspaceResponse.json(), runsResponse.json()])) as [
+        const [nextWorkspace, runsBody, needsBody] = (await Promise.all([workspaceResponse.json(), runsResponse.json(), needsResponse.json()])) as [
           WorkspaceSeed,
-          { runs: ElfRun[] }
+          { runs: ElfRun[] },
+          { items: DecisionItem[] }
         ];
 
         if (!cancelled) {
           setWorkspace(nextWorkspace);
+          setDecisionItems(needsBody.items);
           setRoomRuns((current) => ({ ...current, [selectedRoomId]: runsBody.runs }));
         }
       } catch {
@@ -187,6 +195,10 @@ export function App() {
       } satisfies Record<RoomStatus, number>
     );
   }, [workspace.rooms]);
+
+  const visibleDecisionItems = useMemo(() => {
+    return selectedProductId === "all" ? decisionItems : decisionItems.filter((item) => item.productId === selectedProductId);
+  }, [decisionItems, selectedProductId]);
 
   const saveRoomNote = async (roomId: string) => {
     const note = roomNotes[roomId]?.trim();
@@ -312,6 +324,7 @@ export function App() {
     }
     const body = (await response.json()) as { workspace: WorkspaceSeed };
     setWorkspace(body.workspace);
+    setDecisionItems(buildDecisionItems(body.workspace.rooms));
     setDaemonState("local");
     setNewRoom((current) => ({ ...current, productId: body.workspace.products[0]?.id ?? current.productId }));
   };
@@ -343,6 +356,7 @@ export function App() {
 
     const body = (await response.json()) as { room: Room; workspace: WorkspaceSeed };
     setWorkspace(body.workspace);
+    setDecisionItems(buildDecisionItems(body.workspace.rooms));
     setSelectedProductId(body.room.productId);
     setSelectedRoomId(body.room.id);
     setNewRoom((current) => ({ ...current, title: "", acceptanceCriteria: "" }));
@@ -431,6 +445,16 @@ export function App() {
           </div>
         </header>
 
+        <NeedsMePanel
+          items={visibleDecisionItems}
+          workspace={workspace}
+          onOpenRoom={(item) => {
+            setSelectedProductId(item.productId);
+            setSelectedRoomId(item.roomId);
+            setIsCreatingRoom(false);
+          }}
+        />
+
         {isCreatingRoom ? (
           <section className="mb-4 rounded-xl border border-stone-200 bg-white p-4 shadow-sm">
             <div className="mb-3">
@@ -514,6 +538,68 @@ export function App() {
         />
       </section>
     </main>
+  );
+}
+
+function NeedsMePanel({
+  items,
+  workspace,
+  onOpenRoom
+}: {
+  items: DecisionItem[];
+  workspace: WorkspaceSeed;
+  onOpenRoom: (item: DecisionItem) => void;
+}) {
+  return (
+    <section className="mb-4 rounded-xl border border-stone-200 bg-white p-3 shadow-sm" aria-label="Needs Me">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <Inbox size={17} />
+          <div>
+            <p className="text-[11px] font-extrabold uppercase text-stone-500">Needs Me</p>
+            <h3 className="text-base font-bold tracking-normal">{items.length} founder decision{items.length === 1 ? "" : "s"}</h3>
+          </div>
+        </div>
+        <Badge variant={items.length > 0 ? "amber" : "secondary"}>{items.length > 0 ? "Review queue" : "Quiet"}</Badge>
+      </div>
+
+      {items.length > 0 ? (
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-2">
+          {items.slice(0, 4).map((item) => {
+            const product = workspace.products.find((entry) => entry.id === item.productId);
+            const tone = item.risk === "high" ? "red" : item.risk === "medium" ? "amber" : "green";
+
+            return (
+              <button
+                type="button"
+                className="grid min-h-[164px] gap-2 rounded-lg border border-stone-200 bg-stone-50 p-3 text-left transition-colors hover:border-emerald-300 hover:bg-emerald-50"
+                key={item.id}
+                onClick={() => onOpenRoom(item)}
+              >
+                <div className="flex items-center gap-2 text-xs font-extrabold text-stone-500">
+                  <span className={cn("h-2.5 w-2.5 rounded-full", statusDot[item.status])} />
+                  <span>{product?.name ?? "Unknown project"}</span>
+                  <Badge variant={tone} className="ml-auto">{item.risk}</Badge>
+                </div>
+                <strong className="text-sm leading-5">{item.title}</strong>
+                <p className="max-h-12 overflow-hidden text-xs leading-5 text-stone-600">{item.reason}</p>
+                <p className="max-h-10 overflow-hidden rounded-md bg-white px-2 py-1.5 text-xs leading-5 text-stone-500">
+                  {item.evidence[0] ?? item.recommendation}
+                </p>
+                <div className="mt-auto flex flex-wrap items-center gap-1.5">
+                  <Badge variant={statusTone[item.status]}>{statusLabels[item.status]}</Badge>
+                  <span className="ml-auto inline-flex items-center gap-1 text-xs font-bold text-stone-700">
+                    Open <ArrowRight size={13} />
+                  </span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="rounded-lg bg-stone-50 px-3 py-2 text-sm text-stone-500">No room currently has an ask, failed run, blocker, or ready review.</p>
+      )}
+    </section>
   );
 }
 

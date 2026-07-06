@@ -59,6 +59,20 @@ export interface Decision {
   risk: "low" | "medium" | "high";
 }
 
+export interface DecisionItem {
+  id: string;
+  roomId: string;
+  productId: string;
+  title: string;
+  reason: string;
+  status: RoomStatus;
+  risk: Decision["risk"];
+  urgency: number;
+  recommendation: string;
+  evidence: string[];
+  actions: string[];
+}
+
 export interface Room {
   id: string;
   productId: string;
@@ -106,6 +120,74 @@ export const statusLabels: Record<RoomStatus, string> = {
   done: "Done",
   idle: "Idle"
 };
+
+const decisionRiskRank: Record<DecisionItem["risk"], number> = {
+  low: 1,
+  medium: 2,
+  high: 3
+};
+
+export function buildDecisionItems(rooms: Room[]): DecisionItem[] {
+  return rooms
+    .flatMap((room) => {
+      const ask = room.asks[0];
+      const readyArtifacts = room.artifacts.filter((artifact) => artifact.status === "ready" || artifact.status === "passed");
+      const failedArtifacts = room.artifacts.filter((artifact) => artifact.status === "failed");
+      const recentLogs = room.logs.slice(-3).map((log) => `${log.level}: ${log.message}`);
+      const items: DecisionItem[] = [];
+
+      if (room.status === "asking" || ask) {
+        items.push({
+          id: `need-${room.id}-ask`,
+          roomId: room.id,
+          productId: room.productId,
+          title: ask ? "Elf needs a founder call" : "Room needs founder input",
+          reason: ask?.question ?? room.summary,
+          status: "asking",
+          risk: "medium",
+          urgency: 1,
+          recommendation: ask?.recommendation ?? "Open the room and answer the elf before continuing.",
+          evidence: ask ? [`Options: ${ask.options.join(" / ")}`, ...recentLogs] : recentLogs,
+          actions: ["Open room", "Answer ask", "Add context"]
+        });
+      }
+
+      if (room.status === "failed" || room.status === "blocked" || failedArtifacts.length > 0) {
+        items.push({
+          id: `need-${room.id}-stuck`,
+          roomId: room.id,
+          productId: room.productId,
+          title: room.status === "blocked" ? "Elf is blocked" : "Run needs inspection",
+          reason: room.summary,
+          status: failedArtifacts.length > 0 && room.status !== "blocked" ? "failed" : room.status,
+          risk: failedArtifacts.length > 0 ? "high" : "medium",
+          urgency: 2,
+          recommendation: "Inspect the logs and decide whether to retry, kill, or add missing context.",
+          evidence: [...failedArtifacts.map((artifact) => `${artifact.title}: ${artifact.summary}`), ...recentLogs],
+          actions: ["Inspect logs", "Retry", "Add context"]
+        });
+      }
+
+      if (room.status === "ready" || readyArtifacts.length > 0) {
+        items.push({
+          id: `need-${room.id}-ready`,
+          roomId: room.id,
+          productId: room.productId,
+          title: "Work is ready for review",
+          reason: room.summary,
+          status: room.status,
+          risk: failedArtifacts.length > 0 ? "high" : "low",
+          urgency: 3,
+          recommendation: readyArtifacts.length > 0 ? "Review the artifacts and run the relevant check before accepting." : "Open the room and verify why it is marked ready.",
+          evidence: readyArtifacts.length > 0 ? readyArtifacts.map((artifact) => `${artifact.title}: ${artifact.summary}`) : recentLogs,
+          actions: ["Review artifacts", "Open diff", "Run check"]
+        });
+      }
+
+      return items;
+    })
+    .sort((a, b) => a.urgency - b.urgency || decisionRiskRank[b.risk] - decisionRiskRank[a.risk]);
+}
 
 export const seedWorkspace: WorkspaceSeed = {
   products: [

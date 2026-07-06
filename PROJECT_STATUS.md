@@ -33,7 +33,7 @@ Elves HQ is a local-first founder cockpit for running Codex elves across a produ
 - 2026-07-06 - Project created as a fresh local-first replacement direction for SaaS Maker's original operating-cockpit ambition.
 - 2026-07-06 - V0 OpenSpec change `local-task-rooms-v0` started.
 - 2026-07-06 - Local daemon and root SQLite store added for persisted workspace/room data and room notes.
-- 2026-07-07 - Task-room creation, isolated worktree runs, diff capture, and check gates landed in the local cockpit.
+- 2026-07-07 - Task-room creation, isolated worktree runs, diff capture, check gates, and a signal-backed Needs Me queue landed in the local cockpit.
 
 ## Products
 
@@ -52,13 +52,14 @@ Elves HQ is a local-first founder cockpit for running Codex elves across a produ
 - Check gates run inside the isolated worktree, capture output to `runs/<run-id>/check.log`, and attach pass/fail test artifacts to the room.
 - Project-wise room creation is available from the cockpit and via `POST /api/rooms`.
 - Fleet registry import from `../saas-maker/foundry.projects.json` is wired through the daemon and UI.
+- Needs Me queue aggregates founder decisions from room asks, blocked/failed runs, failed gates, and ready artifacts via `GET /api/needs-me`.
 
 ## Todo / Planned / Deferred / Blocked
 
 1. Add retry controls that restart from the latest room context.
 2. Add CodeVetter as a review gate after the room loop is useful.
 3. Add cleanup controls for old worktrees once review is resolved.
-4. Add a stronger decision inbox for rooms that are ready, blocked, failed, or asking.
+4. Add decision resolution actions for approve, reject, request fix, and snooze.
 
 ### Deferred
 
