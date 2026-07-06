@@ -128,6 +128,12 @@ export interface ResolveDecisionInput {
   note?: string;
 }
 
+export interface AnswerRoomAskInput {
+  askId: string;
+  answer: string;
+  note?: string;
+}
+
 export class WorkspaceStore {
   private readonly db: DatabaseSync;
 
@@ -463,6 +469,42 @@ export class WorkspaceStore {
     }
 
     this.appendRoomLog(room.id, resolution.logLevel, resolution.logMessage);
+    return this.getRoom(room.id);
+  }
+
+  answerRoomAsk(roomId: string, input: AnswerRoomAskInput): Room {
+    const room = this.getRoom(roomId);
+    const ask = room.asks.find((item) => item.id === input.askId);
+    const answer = input.answer.trim();
+    const note = input.note?.trim();
+
+    if (!ask) {
+      throw new Error("Ask is no longer open in this room.");
+    }
+    if (!answer) {
+      throw new Error("Answer is required.");
+    }
+
+    const decisionId = `dec-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    const now = new Date().toISOString();
+    const noteBody = [`Answered elf ask: ${ask.question}`, `Answer: ${answer}`, note ? `Context: ${note}` : undefined].filter(Boolean).join("\n");
+    const summary = `Founder answered: ${answer}`;
+
+    this.db.exec("BEGIN");
+    try {
+      this.db
+        .prepare("INSERT INTO decisions (id, room_id, title, status, risk) VALUES (?, ?, ?, ?, ?)")
+        .run(decisionId, room.id, `Answered elf ask: ${answer}`, "answered", "low");
+      this.db.prepare("INSERT INTO room_notes (room_id, body, created_at) VALUES (?, ?, ?)").run(room.id, noteBody, now);
+      this.db.prepare("DELETE FROM room_asks WHERE room_id = ? AND id = ?").run(room.id, ask.id);
+      this.db.prepare("UPDATE rooms SET status = ?, summary = ?, last_activity_at = ? WHERE id = ?").run("idle", summary, "now", room.id);
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+
+    this.appendRoomLog(room.id, "success", `Founder answered elf ask: ${answer}`);
     return this.getRoom(room.id);
   }
 

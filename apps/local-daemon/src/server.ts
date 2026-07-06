@@ -113,6 +113,14 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    const answerAskMatch = url.pathname.match(/^\/api\/rooms\/([^/]+)\/asks\/([^/]+)\/answer$/);
+    if (request.method === "POST" && answerAskMatch) {
+      const body = await readJson(request);
+      const room = store.answerRoomAsk(answerAskMatch[1], readAnswerAskInput(answerAskMatch[2], body));
+      sendJson(response, 200, { room, workspace: store.getWorkspace(), needs: store.getDecisionItems() });
+      return;
+    }
+
     const runsMatch = url.pathname.match(/^\/api\/rooms\/([^/]+)\/runs$/);
     if (request.method === "GET" && runsMatch) {
       sendJson(response, 200, { runs: store.listRuns(runsMatch[1]) });
@@ -324,6 +332,23 @@ function readDecisionInput(body: unknown): { action: DecisionAction; note?: stri
 
   return {
     action: record.action,
+    note: typeof record.note === "string" ? record.note : undefined
+  };
+}
+
+function readAnswerAskInput(askId: string, body: unknown): { askId: string; answer: string; note?: string } {
+  if (!body || typeof body !== "object") {
+    throw new Error("Expected JSON body");
+  }
+
+  const record = body as { answer?: unknown; note?: unknown };
+  if (typeof record.answer !== "string") {
+    throw new Error("answer is required");
+  }
+
+  return {
+    askId,
+    answer: record.answer,
     note: typeof record.note === "string" ? record.note : undefined
   };
 }

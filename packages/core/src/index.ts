@@ -68,7 +68,7 @@ export interface Artifact {
 export interface Decision {
   id: string;
   title: string;
-  status: "open" | "approved" | "requested_fix" | "rejected" | "snoozed" | "retried";
+  status: "open" | "approved" | "requested_fix" | "rejected" | "snoozed" | "retried" | "answered";
   risk: "low" | "medium" | "high";
 }
 

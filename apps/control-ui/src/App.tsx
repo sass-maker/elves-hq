@@ -548,6 +548,33 @@ export function App() {
     }
   };
 
+  const answerRoomAsk = async (roomId: string, askId: string, answer: string, note?: string) => {
+    const response = await fetch(`${daemonBaseUrl}/api/rooms/${roomId}/asks/${askId}/answer`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ answer, note })
+    });
+
+    if (!response.ok) {
+      const body = (await response.json().catch(() => ({ error: "Ask answer failed." }))) as { error?: string };
+      setDecisionPreview((current) => ({ ...current, [roomId]: body.error ?? "Ask answer failed." }));
+      return;
+    }
+
+    const body = (await response.json()) as { room: Room; workspace: WorkspaceSeed; needs: DecisionItem[] };
+    setDecisionPreview((current) => ({ ...current, [roomId]: `Answered elf ask: ${answer}` }));
+    setWorkspace(body.workspace);
+    setDecisionItems(body.needs);
+    setDailyBrief(buildDailyBrief(body.workspace));
+    setSelectedRoomId(body.room.id);
+    setSelectedProductId(body.room.productId);
+    if (note?.trim()) {
+      setRoomNotes((current) => ({ ...current, [roomId]: "" }));
+    }
+  };
+
   const importFleetRegistry = async () => {
     const response = await fetch(`${daemonBaseUrl}/api/import/fleet-registry`, { method: "POST" });
     if (!response.ok) {
@@ -862,6 +889,7 @@ export function App() {
           onGenerateTranscript={() => generateRoomTranscript(selectedRoom.id)}
           onKillRun={() => killLatestRun(selectedRoom.id)}
           onDecisionAction={(action, note) => performDecisionAction(selectedRoom.id, action, note)}
+          onAnswerAsk={(askId, answer, note) => answerRoomAsk(selectedRoom.id, askId, answer, note)}
         />
       </section>
     </main>
@@ -1252,7 +1280,8 @@ function RoomDetail({
   onCleanupWorktree,
   onGenerateTranscript,
   onKillRun,
-  onDecisionAction
+  onDecisionAction,
+  onAnswerAsk
 }: {
   room: Room;
   workspace: WorkspaceSeed;
@@ -1284,6 +1313,7 @@ function RoomDetail({
   onGenerateTranscript: () => void;
   onKillRun: () => void;
   onDecisionAction: (action: DecisionAction, note?: string) => void;
+  onAnswerAsk: (askId: string, answer: string, note?: string) => void;
 }) {
   const product = roomProduct(workspace, room);
   const elf = roomElf(workspace, room);
@@ -1322,7 +1352,7 @@ function RoomDetail({
           <p className="text-sm leading-6 text-amber-950">{ask.question}</p>
           <div className="mt-3 flex flex-wrap gap-2">
             {ask.options.map((option) => (
-              <Button variant="outline" size="sm" type="button" key={option}>
+              <Button variant="outline" size="sm" type="button" key={option} onClick={() => onAnswerAsk(ask.id, option, decisionNote)}>
                 {option}
               </Button>
             ))}
