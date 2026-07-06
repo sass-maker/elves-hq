@@ -27,6 +27,8 @@ The UI runs on `http://127.0.0.1:5177/`. The local daemon runs on `http://127.0.
 
 Worktree-backed runs create isolated git worktrees under `runs/<run-id>/worktree` and captured patches at `runs/<run-id>/diff.patch`. The `runs/` directory is local-only and ignored.
 
+Check gates run inside the captured worktree, choose a package script by key (`typecheck` in the UI today), and write output to `runs/<run-id>/check.log`.
+
 ## Checks
 
 ```bash

@@ -14,7 +14,7 @@
 - [x] Add run kill endpoint and default runtime cap.
 - [x] Add git worktree and diff artifact capture.
 - [x] Add worktree-scoped Codex write mode.
-- [ ] Add test/check gate execution.
+- [x] Add test/check gate execution.
 
 ## Verification
 
@@ -29,4 +29,6 @@
 - [x] `POST /api/runs/:id/kill`
 - [x] `POST /api/rooms/:id/runs/start` worktree dry run
 - [x] `GET /api/runs/:id/diff`
+- [x] `POST /api/runs/:id/check`
+- [x] `GET /api/runs/:id/check-output`
 - [x] Browser smoke of local cockpit

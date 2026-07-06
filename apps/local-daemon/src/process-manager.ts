@@ -1,8 +1,8 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import type { ElfRun } from "@elves-hq/core";
+import type { CheckScriptKey, ElfRun } from "@elves-hq/core";
 import { WorkspaceStore } from "./store";
 
 const projectRoot = fileURLToPath(new URL("../../../", import.meta.url));
@@ -68,6 +68,61 @@ export class RoomProcessManager {
     this.store.appendRoomLog(running.roomId, "warning", `Founder requested stop for ${runId}.`);
     running.child.kill("SIGTERM");
     return { ok: true };
+  }
+
+  runCheck(runId: string, requestedScript?: CheckScriptKey) {
+    const run = this.store.getRun(runId);
+    if (run.status === "running") {
+      throw new Error("Cannot run checks while the room run is still active");
+    }
+    if (!run.mode.includes("worktree")) {
+      throw new Error("Checks require a worktree-backed run");
+    }
+
+    const worktreePath = resolve(runsRoot, run.id, "worktree");
+    if (!existsSync(worktreePath)) {
+      throw new Error(`Missing worktree for run ${run.id}`);
+    }
+
+    const command = detectCheckCommand(worktreePath, requestedScript);
+    this.store.appendRoomLog(run.roomId, "info", `Running check gate: ${command.label}`);
+    const result = spawnSync(command.command, command.args, {
+      cwd: worktreePath,
+      encoding: "utf8",
+      maxBuffer: 1024 * 1024 * 20,
+      shell: false
+    });
+
+    const output = [
+      `$ ${command.label}`,
+      "",
+      result.stdout.trim(),
+      result.stderr.trim() ? `\n[stderr]\n${result.stderr.trim()}` : ""
+    ]
+      .filter(Boolean)
+      .join("\n");
+    const outputPath = fileURLToPath(new URL(`../../../runs/${run.id}/check.log`, import.meta.url));
+    mkdirSync(dirname(outputPath), { recursive: true });
+    writeFileSync(outputPath, `${output}\n`);
+
+    const passed = result.status === 0;
+    this.store.addArtifact(run.roomId, {
+      type: "test",
+      title: `${command.scriptKey} gate for ${run.id}`,
+      summary: `${passed ? "Passed" : "Failed"} with exit code ${result.status ?? "unknown"}; output captured at ${outputPath}`,
+      status: passed ? "passed" : "failed"
+    });
+    this.store.appendRoomLog(run.roomId, passed ? "success" : "error", `Check gate ${passed ? "passed" : "failed"}: ${command.label}`);
+
+    return {
+      runId: run.id,
+      passed,
+      exitCode: result.status,
+      scriptKey: command.scriptKey,
+      command: command.label,
+      outputPath,
+      output
+    };
   }
 
   private spawnRun(localPath: string, taskTitle: string, options: StartRunOptions, worktreePath?: string) {
@@ -276,4 +331,37 @@ function defaultPrompt(taskTitle: string, mode: ElfRun["mode"]) {
   }
 
   return `Inspect the task "${taskTitle}" and report the safest next step. Do not edit files.`;
+}
+
+function detectCheckCommand(worktreePath: string, requestedScript: CheckScriptKey | undefined) {
+  const packageJsonPath = resolve(worktreePath, "package.json");
+  if (!existsSync(packageJsonPath)) {
+    throw new Error("No package.json found in worktree; check gate detection is not available yet.");
+  }
+
+  const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8")) as { scripts?: Record<string, string>; packageManager?: string };
+  const scripts = packageJson.scripts ?? {};
+  const scriptKey = requestedScript && scripts[requestedScript] ? requestedScript : (["check", "typecheck", "test", "build"] as CheckScriptKey[]).find((key) => scripts[key]);
+
+  if (!scriptKey) {
+    throw new Error("No check, typecheck, test, or build script found in package.json.");
+  }
+
+  const packageManager = packageJson.packageManager?.startsWith("pnpm") || existsSync(resolve(worktreePath, "pnpm-lock.yaml")) ? "pnpm" : "npm";
+
+  if (packageManager === "pnpm") {
+    return {
+      scriptKey,
+      command: "pnpm",
+      args: [scriptKey],
+      label: `pnpm ${scriptKey}`
+    };
+  }
+
+  return {
+    scriptKey,
+    command: "npm",
+    args: ["run", scriptKey],
+    label: `npm run ${scriptKey}`
+  };
 }

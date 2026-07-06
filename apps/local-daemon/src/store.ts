@@ -183,6 +183,15 @@ export class WorkspaceStore {
     };
   }
 
+  getRun(runId: string): ElfRun {
+    const row = this.db.prepare("SELECT * FROM elf_runs WHERE id = ?").get(runId) as unknown as RunRow | undefined;
+    if (!row) {
+      throw new Error(`Run not found: ${runId}`);
+    }
+
+    return hydrateRun(row);
+  }
+
   finishRun(runId: string, status: ElfRun["status"], exitCode: number | null): Room {
     const run = this.db.prepare("SELECT * FROM elf_runs WHERE id = ?").get(runId) as unknown as RunRow | undefined;
     if (!run) {
@@ -224,18 +233,7 @@ export class WorkspaceStore {
   }
 
   listRuns(roomId: string): ElfRun[] {
-    return (this.db.prepare("SELECT * FROM elf_runs WHERE room_id = ? ORDER BY started_at DESC").all(roomId) as unknown as RunRow[]).map(
-      (row): ElfRun => ({
-        id: row.id,
-        roomId: row.room_id,
-        mode: row.mode,
-        status: row.status,
-        command: row.command,
-        startedAt: row.started_at,
-        endedAt: row.ended_at,
-        exitCode: row.exit_code
-      })
-    );
+    return (this.db.prepare("SELECT * FROM elf_runs WHERE room_id = ? ORDER BY started_at DESC").all(roomId) as unknown as RunRow[]).map(hydrateRun);
   }
 
   importFleetRegistry(): { imported: number } {
@@ -491,6 +489,19 @@ function humanRunMode(mode: ElfRun["mode"]) {
     case "dry-run":
       return "local dry";
   }
+}
+
+function hydrateRun(row: RunRow): ElfRun {
+  return {
+    id: row.id,
+    roomId: row.room_id,
+    mode: row.mode,
+    status: row.status,
+    command: row.command,
+    startedAt: row.started_at,
+    endedAt: row.ended_at,
+    exitCode: row.exit_code
+  };
 }
 
 function mergeProducts(primary: Product[], fallback: Product[]): Product[] {

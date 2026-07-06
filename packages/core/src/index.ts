@@ -87,6 +87,8 @@ export interface ElfRun {
   exitCode: number | null;
 }
 
+export type CheckScriptKey = "check" | "typecheck" | "test" | "build";
+
 export interface WorkspaceSeed {
   products: Product[];
   elves: Elf[];

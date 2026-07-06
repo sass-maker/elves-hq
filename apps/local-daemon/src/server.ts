@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import type { ElfRun } from "@elves-hq/core";
+import type { CheckScriptKey, ElfRun } from "@elves-hq/core";
 import { RoomProcessManager } from "./process-manager";
 import { WorkspaceStore } from "./store";
 
@@ -96,6 +96,32 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    const checkMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/check$/);
+    if (request.method === "POST" && checkMatch) {
+      const body = await readJson(request);
+      const scriptKey = readCheckScriptKey(body);
+      sendJson(response, 200, processManager.runCheck(checkMatch[1], scriptKey));
+      return;
+    }
+
+    const checkOutputMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/check-output$/);
+    if (request.method === "GET" && checkOutputMatch) {
+      const runId = checkOutputMatch[1];
+      if (!/^run-[a-z0-9-]+$/i.test(runId)) {
+        sendJson(response, 400, { error: "Invalid run id" });
+        return;
+      }
+
+      const outputPath = fileURLToPath(new URL(`${runId}/check.log`, `file://${runsRoot.endsWith("/") ? runsRoot : `${runsRoot}/`}`));
+      if (!existsSync(outputPath)) {
+        sendJson(response, 404, { error: "No check output captured for this run" });
+        return;
+      }
+
+      sendJson(response, 200, { runId, output: readFileSync(outputPath, "utf8") });
+      return;
+    }
+
     const noteMatch = url.pathname.match(/^\/api\/rooms\/([^/]+)\/notes$/);
     if (request.method === "POST" && noteMatch) {
       const body = await readJson(request);
@@ -129,4 +155,17 @@ function readRunMode(body: unknown): ElfRun["mode"] {
   }
 
   throw new Error("Unsupported run mode");
+}
+
+function readCheckScriptKey(body: unknown): CheckScriptKey | undefined {
+  if (!body || typeof body !== "object" || !("scriptKey" in body)) {
+    return undefined;
+  }
+
+  const scriptKey = (body as { scriptKey?: unknown }).scriptKey;
+  if (scriptKey === "check" || scriptKey === "typecheck" || scriptKey === "test" || scriptKey === "build") {
+    return scriptKey;
+  }
+
+  throw new Error("Unsupported check script key");
 }

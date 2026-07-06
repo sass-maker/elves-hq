@@ -81,3 +81,10 @@ The V0 daemon MUST be able to start, log, persist, and stop room-scoped runs.
 
 - **WHEN** a worktree run has captured a diff
 - **THEN** the daemon can return the patch for preview in the room
+
+#### Scenario: Founder runs a check gate
+
+- **WHEN** a worktree run has completed
+- **THEN** the daemon can run a selected package script inside the isolated worktree
+- **AND** output is written to a local check log
+- **AND** a pass/fail test artifact is attached to the room

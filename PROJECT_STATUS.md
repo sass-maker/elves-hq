@@ -48,14 +48,15 @@ Elves HQ is a local-first founder cockpit for running Codex elves across a produ
 - Room runs support local dry runs and read-only Codex inspection, stream stdout/stderr into room logs, persist run records, support kill, and enforce a default runtime cap.
 - Worktree-backed runs create isolated branches/worktrees under ignored `runs/<run-id>/worktree`, capture `git diff` patches to `runs/<run-id>/diff.patch`, and attach ready diff artifacts to the room.
 - Write-capable Codex mode is available only inside isolated worktrees; it is not used for direct repo writes.
+- Check gates run inside the isolated worktree, capture output to `runs/<run-id>/check.log`, and attach pass/fail test artifacts to the room.
 
 ## Todo / Planned / Deferred / Blocked
 
 1. Wire product import from `../saas-maker/foundry.projects.json`.
-2. Add test/check gate execution and attach output artifacts.
-3. Add retry controls that restart from the latest room context.
-4. Add CodeVetter as a review gate after the room loop is useful.
-5. Add cleanup controls for old worktrees once review is resolved.
+2. Add retry controls that restart from the latest room context.
+3. Add CodeVetter as a review gate after the room loop is useful.
+4. Add cleanup controls for old worktrees once review is resolved.
+5. Add a proper room/task creation flow instead of seeded rooms only.
 
 ### Deferred
 
