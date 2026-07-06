@@ -1184,6 +1184,7 @@ function RoomDetail({
   const activeRun = runs.find((run) => run.status === "running");
   const decisionNote = noteDraft.trim() || undefined;
   const activeMemorySection = productMemory?.sections.find((section) => section.key === selectedMemorySection);
+  const gateChecklist = buildGateChecklist(room);
 
   return (
     <div className="grid gap-4 p-4">
@@ -1238,6 +1239,7 @@ function RoomDetail({
         </div>
         <div>
           <SectionTitle icon={<PanelRightOpen size={16} />} title="Actions" />
+          <GateChecklist items={gateChecklist} />
           <div className="grid grid-cols-3 gap-2">
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onStartDryRun}><Play size={15} />Dry</Button>
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onStartCodexReadOnly}><SquareTerminal size={15} />Read</Button>
@@ -1481,6 +1483,119 @@ function ArtifactRow({ artifact, last }: { artifact: Artifact; last: boolean }) 
     </div>
   );
 }
+
+type GateChecklistItem = {
+  id: string;
+  label: string;
+  state: "passed" | "failed" | "missing" | "waiting";
+  summary: string;
+};
+
+function buildGateChecklist(room: Pick<Room, "artifacts">): GateChecklistItem[] {
+  const hasDiff = room.artifacts.some((artifact) => artifact.type === "diff");
+  const checkArtifact = latestArtifactOfType(room.artifacts, "test");
+  const reviewArtifact = latestArtifactOfType(room.artifacts, "review");
+
+  return [
+    buildGateChecklistItem({
+      id: "check",
+      label: "Check gate",
+      hasDiff,
+      artifact: checkArtifact,
+      missingSummary: "Run Check before approval."
+    }),
+    buildGateChecklistItem({
+      id: "codevetter",
+      label: "CodeVetter",
+      hasDiff,
+      artifact: reviewArtifact,
+      missingSummary: "Run Vet before approval."
+    })
+  ];
+}
+
+function latestArtifactOfType(artifacts: Artifact[], type: Artifact["type"]) {
+  for (let index = artifacts.length - 1; index >= 0; index -= 1) {
+    if (artifacts[index].type === type) {
+      return artifacts[index];
+    }
+  }
+
+  return undefined;
+}
+
+function buildGateChecklistItem({
+  id,
+  label,
+  hasDiff,
+  artifact,
+  missingSummary
+}: {
+  id: string;
+  label: string;
+  hasDiff: boolean;
+  artifact?: Artifact;
+  missingSummary: string;
+}): GateChecklistItem {
+  if (!hasDiff) {
+    return { id, label, state: "waiting", summary: "Waiting for a worktree diff." };
+  }
+
+  if (!artifact) {
+    return { id, label, state: "missing", summary: missingSummary };
+  }
+
+  if (artifact.status === "passed") {
+    return { id, label, state: "passed", summary: artifact.title };
+  }
+
+  if (artifact.status === "failed") {
+    return { id, label, state: "failed", summary: artifact.title };
+  }
+
+  return { id, label, state: "missing", summary: missingSummary };
+}
+
+function GateChecklist({ items }: { items: GateChecklistItem[] }) {
+  return (
+    <div className="mb-3 grid gap-2 rounded-lg border border-stone-200 bg-stone-50/70 p-2.5" aria-label="Gate checklist">
+      {items.map((item) => (
+        <div className="flex min-w-0 items-start gap-2" key={item.id}>
+          <span className={cn(
+            "mt-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded-full border",
+            item.state === "passed" && "border-emerald-200 bg-emerald-50 text-emerald-700",
+            item.state === "failed" && "border-red-200 bg-red-50 text-red-700",
+            item.state === "missing" && "border-amber-200 bg-amber-50 text-amber-700",
+            item.state === "waiting" && "border-stone-200 bg-white text-stone-500"
+          )}>
+            {item.state === "passed" ? <CheckCircle2 size={13} /> : item.state === "failed" ? <CircleStop size={13} /> : <HelpCircle size={13} />}
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center justify-between gap-2">
+              <strong className="text-xs">{item.label}</strong>
+              <Badge variant={gateBadgeTone[item.state]} className="shrink-0">{gateStateLabel[item.state]}</Badge>
+            </div>
+            <p className="mt-1 text-xs leading-4 text-stone-500">{item.summary}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const gateBadgeTone: Record<GateChecklistItem["state"], "green" | "amber" | "red" | "secondary"> = {
+  passed: "green",
+  failed: "red",
+  missing: "amber",
+  waiting: "secondary"
+};
+
+const gateStateLabel: Record<GateChecklistItem["state"], string> = {
+  passed: "Passed",
+  failed: "Failed",
+  missing: "Required",
+  waiting: "Waiting"
+};
 
 function ElfWorkbench({ status }: { status: RoomStatus }) {
   return (

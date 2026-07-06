@@ -33,7 +33,7 @@ Elves HQ is a local-first founder cockpit for running Codex elves across a produ
 - 2026-07-06 - Project created as a fresh local-first replacement direction for SaaS Maker's original operating-cockpit ambition.
 - 2026-07-06 - V0 OpenSpec change `local-task-rooms-v0` started.
 - 2026-07-06 - Local daemon and root SQLite store added for persisted workspace/room data and room notes.
-- 2026-07-07 - Task-room creation, explicit elf assignment, isolated worktree runs, interrupted-run recovery, diff capture, captured prompts, editable local product memory, built-in playbooks, structured elf asks, room transcripts, fix-request retry context, local Daily Brief, check gates, CodeVetter gate adapter, generated worktree cleanup, a signal-backed Needs Me queue, founder decision actions, and approval guards for failed or missing gates landed in the local cockpit.
+- 2026-07-07 - Task-room creation, explicit elf assignment, isolated worktree runs, interrupted-run recovery, diff capture, captured prompts, editable local product memory, built-in playbooks, structured elf asks, room transcripts, fix-request retry context, local Daily Brief, check gates, CodeVetter gate adapter, generated worktree cleanup, visible room gate checklist, a signal-backed Needs Me queue, founder decision actions, and approval guards for failed or missing gates landed in the local cockpit.
 
 ## Products
 
@@ -58,6 +58,7 @@ Elves HQ is a local-first founder cockpit for running Codex elves across a produ
 - Write-capable Codex mode is available only inside isolated worktrees; it is not used for direct repo writes.
 - Check gates run inside the isolated worktree, capture output to `runs/<run-id>/check.log`, attach pass/fail test artifacts to the room, and mark rooms failed when the current check gate fails.
 - CodeVetter gate runs against captured worktree diffs, writes reports to `runs/<run-id>/codevetter.md`, attaches review artifacts, and marks rooms failed when blocking findings are detected.
+- Room action panels show a visible gate checklist so founders can see whether Check and CodeVetter are waiting, required, passed, or failed before approving a diff.
 - Founder approval is blocked while the room has an unresolved current failed test or review gate, or while a diff artifact is missing a passed check gate or passed CodeVetter review gate.
 - Worktree cleanup removes generated `runs/<run-id>/worktree` checkouts on demand, deletes daemon-created `elves/<room>/<run>` branches when Git considers them safely merged, and preserves captured diff, check, and review artifacts.
 - Project-wise room creation is available from the cockpit and via `POST /api/rooms`, including explicit assigned elf selection.
