@@ -41,3 +41,12 @@ The V0 cockpit MUST run locally without cloud auth or hosted API dependencies.
 - **THEN** the cockpit opens with seeded local data
 - **AND** no cloud credentials are required
 
+### Requirement: Local room persistence
+
+The V0 cockpit MUST persist room data in a local store owned by the repository checkout.
+
+#### Scenario: Founder adds a room note
+
+- **WHEN** the founder saves a note in a room
+- **THEN** the local daemon persists it to the local SQLite database
+- **AND** the updated room is returned to the cockpit

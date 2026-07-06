@@ -19,7 +19,8 @@ Elves HQ is a local-first founder cockpit for running Codex elves across a produ
 - Node.js 22+
 - pnpm
 - Browser runtime for the local cockpit
-- Planned: local Codex CLI, git, SQLite
+- Built-in Node SQLite (`node:sqlite`)
+- Planned: local Codex CLI and git worktrees
 
 ### Internal
 
@@ -31,23 +32,26 @@ Elves HQ is a local-first founder cockpit for running Codex elves across a produ
 
 - 2026-07-06 - Project created as a fresh local-first replacement direction for SaaS Maker's original operating-cockpit ambition.
 - 2026-07-06 - V0 OpenSpec change `local-task-rooms-v0` started.
+- 2026-07-06 - Local daemon and root SQLite store added for persisted workspace/room data and room notes.
 
 ## Products
 
 - Local cockpit: `apps/control-ui`
+- Local daemon: `apps/local-daemon`
 - Shared model package: `packages/core`
 
 ## Features (shipped)
 
 - Initial V0 local cockpit scaffold with seeded project/task-room data.
+- Local daemon exposes `GET /api/health`, `GET /api/workspace`, and `POST /api/rooms/:id/notes`.
+- SQLite persistence stores projects, elves, tasks, rooms, logs, asks, artifacts, decisions, and notes in ignored local `data/elves.db`.
 
 ## Todo / Planned / Deferred / Blocked
 
 1. Wire product import from `../saas-maker/foundry.projects.json`.
-2. Add local SQLite persistence for projects, tasks, rooms, asks, decisions, logs, and artifacts.
-3. Add local daemon for Codex process launch, log capture, git worktree creation, and kill/retry controls.
-4. Add real changed-file, diff, and test-output artifact capture.
-5. Add CodeVetter as a review gate after the room loop is useful.
+2. Add local daemon Codex process launch, log capture, git worktree creation, and kill/retry controls.
+3. Add real changed-file, diff, and test-output artifact capture.
+4. Add CodeVetter as a review gate after the room loop is useful.
 
 ### Deferred
 
@@ -59,4 +63,3 @@ Elves HQ is a local-first founder cockpit for running Codex elves across a produ
 ### Blocked
 
 - None.
-

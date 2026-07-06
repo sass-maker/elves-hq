@@ -6,12 +6,15 @@
   "packageManager": "pnpm@10.33.2",
   "scripts": {
     "dev": "pnpm --filter @elves-hq/control-ui dev",
+    "dev:ui": "pnpm --filter @elves-hq/control-ui dev",
+    "dev:daemon": "pnpm --filter @elves-hq/local-daemon dev",
     "build": "pnpm --filter @elves-hq/control-ui build",
-    "typecheck": "pnpm --filter @elves-hq/core typecheck && pnpm --filter @elves-hq/control-ui typecheck",
+    "typecheck": "pnpm --filter @elves-hq/core typecheck && pnpm --filter @elves-hq/local-daemon typecheck && pnpm --filter @elves-hq/control-ui typecheck",
     "check": "pnpm typecheck && pnpm build"
   },
   "devDependencies": {
+    "@types/node": "latest",
+    "tsx": "latest",
     "typescript": "6.0.3"
   }
 }
-

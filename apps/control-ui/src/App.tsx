@@ -12,13 +12,14 @@ import {
   PanelRightOpen,
   Play,
   RotateCcw,
+  Download,
   ScrollText,
   Sparkles,
   SquareTerminal,
   TestTube2
 } from "lucide-react";
-import { seedWorkspace, statusLabels, type Artifact, type Product, type Room, type RoomStatus } from "@elves-hq/core";
-import { useMemo, useState } from "react";
+import { seedWorkspace, statusLabels, type Artifact, type Product, type Room, type RoomStatus, type WorkspaceSeed } from "@elves-hq/core";
+import { useEffect, useMemo, useState } from "react";
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card";
@@ -48,24 +49,26 @@ const statusDot: Record<RoomStatus, string> = {
   idle: "bg-stone-400"
 };
 
-function roomProduct(room: Room): Product {
-  const product = seedWorkspace.products.find((item) => item.id === room.productId);
+const daemonBaseUrl = import.meta.env.VITE_DAEMON_URL ?? "http://127.0.0.1:4327";
+
+function roomProduct(workspace: WorkspaceSeed, room: Room): Product {
+  const product = workspace.products.find((item) => item.id === room.productId);
   if (!product) {
     throw new Error(`Missing product for room ${room.id}`);
   }
   return product;
 }
 
-function roomElf(room: Room) {
-  const elf = seedWorkspace.elves.find((item) => item.id === room.assignedElfId);
+function roomElf(workspace: WorkspaceSeed, room: Room) {
+  const elf = workspace.elves.find((item) => item.id === room.assignedElfId);
   if (!elf) {
     throw new Error(`Missing elf for room ${room.id}`);
   }
   return elf;
 }
 
-function roomTask(room: Room) {
-  const task = seedWorkspace.tasks.find((item) => item.id === room.taskId);
+function roomTask(workspace: WorkspaceSeed, room: Room) {
+  const task = workspace.tasks.find((item) => item.id === room.taskId);
   if (!task) {
     throw new Error(`Missing task for room ${room.id}`);
   }
@@ -73,23 +76,53 @@ function roomTask(room: Room) {
 }
 
 export function App() {
+  const [workspace, setWorkspace] = useState<WorkspaceSeed>(seedWorkspace);
+  const [daemonState, setDaemonState] = useState<"connecting" | "local" | "fallback">("connecting");
   const [selectedProductId, setSelectedProductId] = useState<string>("all");
   const [selectedRoomId, setSelectedRoomId] = useState<string>(seedWorkspace.rooms[1]?.id ?? "");
   const [roomNotes, setRoomNotes] = useState<Record<string, string>>({});
 
+  useEffect(() => {
+    let cancelled = false;
+
+    fetch(`${daemonBaseUrl}/api/workspace`)
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(`Daemon returned ${response.status}`);
+        }
+        return (await response.json()) as WorkspaceSeed;
+      })
+      .then((nextWorkspace) => {
+        if (!cancelled) {
+          setWorkspace(nextWorkspace);
+          setDaemonState("local");
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setWorkspace(seedWorkspace);
+          setDaemonState("fallback");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const visibleRooms = useMemo(() => {
     const rooms =
       selectedProductId === "all"
-        ? seedWorkspace.rooms
-        : seedWorkspace.rooms.filter((room) => room.productId === selectedProductId);
+        ? workspace.rooms
+        : workspace.rooms.filter((room) => room.productId === selectedProductId);
 
     return [...rooms].sort((a, b) => statusOrder.indexOf(a.status) - statusOrder.indexOf(b.status));
-  }, [selectedProductId]);
+  }, [selectedProductId, workspace.rooms]);
 
-  const selectedRoom = seedWorkspace.rooms.find((room) => room.id === selectedRoomId) ?? visibleRooms[0] ?? seedWorkspace.rooms[0];
+  const selectedRoom = workspace.rooms.find((room) => room.id === selectedRoomId) ?? visibleRooms[0] ?? workspace.rooms[0];
 
   const counts = useMemo(() => {
-    return seedWorkspace.rooms.reduce(
+    return workspace.rooms.reduce(
       (acc, room) => {
         acc[room.status] += 1;
         return acc;
@@ -104,7 +137,52 @@ export function App() {
         idle: 0
       } satisfies Record<RoomStatus, number>
     );
-  }, []);
+  }, [workspace.rooms]);
+
+  const saveRoomNote = async (roomId: string) => {
+    const note = roomNotes[roomId]?.trim();
+    if (!note) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`${daemonBaseUrl}/api/rooms/${roomId}/notes`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ body: note })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Daemon returned ${response.status}`);
+      }
+
+      const body = (await response.json()) as { room: Room };
+      setWorkspace((current) => ({
+        ...current,
+        rooms: current.rooms.map((room) => (room.id === roomId ? body.room : room))
+      }));
+      setRoomNotes((current) => ({ ...current, [roomId]: "" }));
+    } catch {
+      setWorkspace((current) => ({
+        ...current,
+        rooms: current.rooms.map((room) => (room.id === roomId ? { ...room, notes: [...room.notes, note] } : room))
+      }));
+      setRoomNotes((current) => ({ ...current, [roomId]: "" }));
+    }
+  };
+
+  const importFleetRegistry = async () => {
+    const response = await fetch(`${daemonBaseUrl}/api/import/fleet-registry`, { method: "POST" });
+    if (!response.ok) {
+      setDaemonState("fallback");
+      return;
+    }
+    const body = (await response.json()) as { workspace: WorkspaceSeed };
+    setWorkspace(body.workspace);
+    setDaemonState("local");
+  };
 
   return (
     <main className="grid h-screen min-h-[760px] min-w-[1120px] grid-cols-[minmax(240px,18vw)_minmax(430px,1fr)_minmax(430px,34vw)] gap-2.5 bg-[radial-gradient(circle_at_78%_12%,rgba(47,105,177,0.14),transparent_26%),linear-gradient(120deg,rgba(255,255,255,0.78),transparent_35%),#edf0ea] p-2.5 text-stone-900 max-lg:flex max-lg:h-auto max-lg:min-w-0 max-lg:flex-col">
@@ -118,17 +196,25 @@ export function App() {
             <h1 className="text-2xl font-bold tracking-normal">Elves HQ</h1>
           </div>
         </div>
+        <Badge variant={daemonState === "local" ? "green" : daemonState === "connecting" ? "blue" : "amber"} className="mb-4">
+          {daemonState === "local" ? "Daemon connected" : daemonState === "connecting" ? "Connecting daemon" : "Seed fallback"}
+        </Badge>
 
         <ProjectButton
           selected={selectedProductId === "all"}
           title="All projects"
-          count={seedWorkspace.rooms.length}
+          count={workspace.products.length}
           onClick={() => setSelectedProductId("all")}
         />
 
+        <Button className="mt-3 w-full" variant="outline" size="sm" type="button" onClick={importFleetRegistry}>
+          <Download size={14} />
+          Import fleet registry
+        </Button>
+
         <div className="mt-2 grid gap-2">
-          {seedWorkspace.products.map((product) => {
-            const productRooms = seedWorkspace.rooms.filter((room) => room.productId === product.id);
+          {workspace.products.map((product) => {
+            const productRooms = workspace.rooms.filter((room) => room.productId === product.id);
             const needs = productRooms.filter((room) => room.status === "asking" || room.status === "ready").length;
 
             return (
@@ -157,7 +243,7 @@ export function App() {
           <div>
             <p className="text-[11px] font-extrabold uppercase text-stone-500">Task rooms</p>
             <h2 className="text-2xl font-bold tracking-normal">
-              {selectedProductId === "all" ? "Every active room" : seedWorkspace.products.find((item) => item.id === selectedProductId)?.name}
+              {selectedProductId === "all" ? "Every active room" : workspace.products.find((item) => item.id === selectedProductId)?.name}
             </h2>
           </div>
           <div className="flex gap-2">
@@ -176,6 +262,7 @@ export function App() {
             <RoomCard
               key={room.id}
               room={room}
+              workspace={workspace}
               selected={selectedRoom.id === room.id}
               onSelect={() => setSelectedRoomId(room.id)}
             />
@@ -186,8 +273,10 @@ export function App() {
       <section className="overflow-auto rounded-l-md rounded-r-2xl border border-stone-200 bg-[#fbfbf7]/95 shadow-2xl shadow-stone-900/10 max-lg:rounded-2xl" aria-label="Selected room">
         <RoomDetail
           room={selectedRoom}
+          workspace={workspace}
           noteDraft={roomNotes[selectedRoom.id] ?? ""}
           onNoteDraftChange={(value) => setRoomNotes((current) => ({ ...current, [selectedRoom.id]: value }))}
+          onSaveNote={() => saveRoomNote(selectedRoom.id)}
         />
       </section>
     </main>
@@ -237,9 +326,9 @@ function StatusPill({ status, count, label }: { status: RoomStatus; count: numbe
   );
 }
 
-function RoomCard({ room, selected, onSelect }: { room: Room; selected: boolean; onSelect: () => void }) {
-  const product = roomProduct(room);
-  const elf = roomElf(room);
+function RoomCard({ room, workspace, selected, onSelect }: { room: Room; workspace: WorkspaceSeed; selected: boolean; onSelect: () => void }) {
+  const product = roomProduct(workspace, room);
+  const elf = roomElf(workspace, room);
   const openAsks = room.asks.length;
   const readyArtifacts = room.artifacts.filter((artifact) => artifact.status === "ready" || artifact.status === "passed").length;
 
@@ -286,16 +375,20 @@ function Signal({ icon, label, active }: { icon: React.ReactNode; label: string;
 
 function RoomDetail({
   room,
+  workspace,
   noteDraft,
-  onNoteDraftChange
+  onNoteDraftChange,
+  onSaveNote
 }: {
   room: Room;
+  workspace: WorkspaceSeed;
   noteDraft: string;
   onNoteDraftChange: (value: string) => void;
+  onSaveNote: () => void;
 }) {
-  const product = roomProduct(room);
-  const elf = roomElf(room);
-  const task = roomTask(room);
+  const product = roomProduct(workspace, room);
+  const elf = roomElf(workspace, room);
+  const task = roomTask(workspace, room);
   const ask = room.asks[0];
 
   return (
@@ -397,6 +490,11 @@ function RoomDetail({
           ))}
           <Separator />
           <Textarea value={noteDraft} onChange={(event) => onNoteDraftChange(event.target.value)} placeholder="Add context for this room..." />
+          <div className="flex justify-end">
+            <Button type="button" size="sm" onClick={onSaveNote} disabled={noteDraft.trim().length === 0}>
+              Add room note
+            </Button>
+          </div>
         </div>
       </section>
     </div>
@@ -450,4 +548,3 @@ function ElfWorkbench({ status }: { status: RoomStatus }) {
     </div>
   );
 }
-

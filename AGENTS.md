@@ -5,8 +5,8 @@ Also read and follow the shared fleet-level agent standard at `../AGENTS.md`. Tr
 ## Project
 
 - **Purpose**: Elves HQ is a local-first control room for running Codex elves across the fleet.
-- **Stack**: pnpm workspace, Vite + React cockpit, TypeScript core package. Local daemon and SQLite persistence are planned next.
-- **Local dev**: `pnpm install`, then `pnpm dev`.
+- **Stack**: pnpm workspace, Vite + React cockpit, Node local daemon using built-in SQLite, TypeScript core package.
+- **Local dev**: `pnpm install`, then run `pnpm dev:daemon` and `pnpm dev:ui` in separate terminals.
 - **Checks**: `pnpm check`.
 - **Deploy**: none for V0. This project is local-only until it earns daily use.
 
@@ -15,6 +15,6 @@ Also read and follow the shared fleet-level agent standard at `../AGENTS.md`. Tr
 - Use elf terminology in user-facing product surfaces.
 - Keep operational/debug labels literal: runs, rooms, logs, artifacts, gates, decisions.
 - The room is the core object. A room represents one task for one product with one or more elf attempts, logs, asks, artifacts, and decisions.
+- Local daemon data lives in `data/elves.db`, which is intentionally ignored.
 - Do not add cloud, auth, public API, widgets, billing, or production deploy paths to V0.
 - Do not let cute UI imply fake progress. Every status should map to logs, artifacts, decisions, or explicit simulated seed data.
-

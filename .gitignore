@@ -5,9 +5,11 @@ dist/
 *.log
 *.db
 *.db-journal
+*.db-shm
+*.db-wal
 .env
 .env.*
 !.env.example
 runs/
+data/
 data/local/
-
