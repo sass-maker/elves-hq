@@ -21,6 +21,7 @@
 - [x] Add persisted founder decision actions.
 - [x] Add retry action from the latest room run mode.
 - [x] Add CodeVetter gate adapter for completed worktree runs.
+- [x] Add generated worktree cleanup control.
 
 ## Verification
 
@@ -42,4 +43,5 @@
 - [x] `POST /api/rooms/:id/decision`
 - [x] `POST /api/runs/:id/codevetter`
 - [x] Blocking CodeVetter finding marks the room failed and creates a Needs Me item.
+- [x] `POST /api/runs/:id/cleanup-worktree`
 - [x] Browser smoke of local cockpit

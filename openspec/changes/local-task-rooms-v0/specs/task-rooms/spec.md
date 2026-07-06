@@ -133,3 +133,14 @@ The V0 daemon MUST be able to run a CodeVetter gate against a completed worktree
 - **WHEN** the CodeVetter gate reports a high-severity or external blocking finding
 - **THEN** the room status changes to failed
 - **AND** the Needs Me queue surfaces the failed review gate for founder inspection
+
+### Requirement: Generated worktree cleanup
+
+The V0 daemon MUST let the founder remove generated worktree folders after a run is no longer active.
+
+#### Scenario: Founder cleans up a generated worktree
+
+- **WHEN** an inactive worktree-backed run has a generated worktree folder
+- **THEN** the daemon removes the generated worktree checkout
+- **AND** captured run artifacts remain available outside the worktree
+- **AND** the room log records the cleanup action

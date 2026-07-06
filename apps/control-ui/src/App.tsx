@@ -18,7 +18,8 @@ import {
   ShieldCheck,
   Sparkles,
   SquareTerminal,
-  TestTube2
+  TestTube2,
+  Trash2
 } from "lucide-react";
 import {
   buildDecisionItems,
@@ -119,6 +120,7 @@ export function App() {
   const [diffPreview, setDiffPreview] = useState<Record<string, string>>({});
   const [checkPreview, setCheckPreview] = useState<Record<string, string>>({});
   const [codevetterPreview, setCodevetterPreview] = useState<Record<string, string>>({});
+  const [cleanupPreview, setCleanupPreview] = useState<Record<string, string>>({});
   const [decisionItems, setDecisionItems] = useState<DecisionItem[]>(buildDecisionItems(seedWorkspace.rooms));
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
   const [newRoom, setNewRoom] = useState({
@@ -368,6 +370,28 @@ export function App() {
     setCodevetterPreview((current) => ({ ...current, [roomId]: body.output }));
   };
 
+  const cleanupLatestWorktree = async (roomId: string) => {
+    const run = roomRuns[roomId]?.find((item) => item.mode.includes("worktree") && item.status !== "running");
+    if (!run) {
+      setCleanupPreview((current) => ({ ...current, [roomId]: "No inactive worktree run is available for cleanup." }));
+      return;
+    }
+
+    const response = await fetch(`${daemonBaseUrl}/api/runs/${run.id}/cleanup-worktree`, { method: "POST" });
+    if (!response.ok) {
+      const body = (await response.json().catch(() => ({ error: "Worktree cleanup failed." }))) as { error?: string };
+      setCleanupPreview((current) => ({ ...current, [roomId]: body.error ?? "Worktree cleanup failed." }));
+      return;
+    }
+
+    const body = (await response.json()) as { removed: boolean; worktreePath: string; room: Room };
+    replaceRoom(body.room);
+    setCleanupPreview((current) => ({
+      ...current,
+      [roomId]: body.removed ? `Removed generated worktree: ${body.worktreePath}` : `No generated worktree found: ${body.worktreePath}`
+    }));
+  };
+
   const performDecisionAction = async (roomId: string, action: DecisionAction, note?: string) => {
     const response = await fetch(`${daemonBaseUrl}/api/rooms/${roomId}/decision`, {
       method: "POST",
@@ -604,6 +628,7 @@ export function App() {
           diffPreview={diffPreview[selectedRoom.id]}
           checkPreview={checkPreview[selectedRoom.id]}
           codevetterPreview={codevetterPreview[selectedRoom.id]}
+          cleanupPreview={cleanupPreview[selectedRoom.id]}
           noteDraft={roomNotes[selectedRoom.id] ?? ""}
           onNoteDraftChange={(value) => setRoomNotes((current) => ({ ...current, [selectedRoom.id]: value }))}
           onSaveNote={() => saveRoomNote(selectedRoom.id)}
@@ -613,6 +638,7 @@ export function App() {
           onOpenDiff={() => openLatestDiff(selectedRoom.id)}
           onRunCheck={() => runLatestCheck(selectedRoom.id)}
           onRunCodeVetter={() => runLatestCodeVetter(selectedRoom.id)}
+          onCleanupWorktree={() => cleanupLatestWorktree(selectedRoom.id)}
           onKillRun={() => killLatestRun(selectedRoom.id)}
           onDecisionAction={(action) => performDecisionAction(selectedRoom.id, action)}
         />
@@ -801,6 +827,7 @@ function RoomDetail({
   diffPreview,
   checkPreview,
   codevetterPreview,
+  cleanupPreview,
   noteDraft,
   onNoteDraftChange,
   onSaveNote,
@@ -810,6 +837,7 @@ function RoomDetail({
   onOpenDiff,
   onRunCheck,
   onRunCodeVetter,
+  onCleanupWorktree,
   onKillRun,
   onDecisionAction
 }: {
@@ -819,6 +847,7 @@ function RoomDetail({
   diffPreview?: string;
   checkPreview?: string;
   codevetterPreview?: string;
+  cleanupPreview?: string;
   noteDraft: string;
   onNoteDraftChange: (value: string) => void;
   onSaveNote: () => void;
@@ -828,6 +857,7 @@ function RoomDetail({
   onOpenDiff: () => void;
   onRunCheck: () => void;
   onRunCodeVetter: () => void;
+  onCleanupWorktree: () => void;
   onKillRun: () => void;
   onDecisionAction: (action: DecisionAction) => void;
 }) {
@@ -898,6 +928,7 @@ function RoomDetail({
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onOpenDiff}><GitBranch size={15} />Diff</Button>
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onRunCheck}><TestTube2 size={15} />Check</Button>
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onRunCodeVetter}><ShieldCheck size={15} />Vet</Button>
+            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onCleanupWorktree}><Trash2 size={15} />Clean</Button>
             <Button className="min-w-0 px-2" variant="destructive" size="sm" type="button" onClick={onKillRun} disabled={!activeRun}><CircleStop size={15} />Kill</Button>
           </div>
           <div className="mt-3 grid grid-cols-2 gap-2 border-t border-stone-200 pt-3">
@@ -953,6 +984,15 @@ function RoomDetail({
           <SectionTitle icon={<ShieldCheck size={16} />} title="CodeVetter gate" />
           <pre className="max-h-72 overflow-auto rounded-lg bg-stone-950 p-3 text-xs leading-5 text-stone-100">
             <code>{codevetterPreview}</code>
+          </pre>
+        </section>
+      ) : null}
+
+      {cleanupPreview ? (
+        <section>
+          <SectionTitle icon={<Trash2 size={16} />} title="Worktree cleanup" />
+          <pre className="max-h-40 overflow-auto rounded-lg bg-stone-950 p-3 text-xs leading-5 text-stone-100">
+            <code>{cleanupPreview}</code>
           </pre>
         </section>
       ) : null}

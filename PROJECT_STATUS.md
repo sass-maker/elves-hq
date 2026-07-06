@@ -8,7 +8,7 @@ Elves HQ is a local-first founder cockpit for running Codex elves across a produ
 
 **Users:** Sarthak first: an AI-native founder/operator managing many local fleet repos with Codex and adjacent coding agents.
 
-**IN scope for V0:** local product registry, project-wise task list, task rooms, elf assignment/status, room asks, logs, artifacts, decision actions, check gates, CodeVetter review gate adapter, resizable room UI, tasteful elf workbench animation, local-only operation.
+**IN scope for V0:** local product registry, project-wise task list, task rooms, elf assignment/status, room asks, logs, artifacts, decision actions, check gates, CodeVetter review gate adapter, generated worktree cleanup controls, resizable room UI, tasteful elf workbench animation, local-only operation.
 
 **OUT of scope for V0:** cloud hosting, auth, public API, widgets, billing, production deploys, Telegram, metrics integrations, marketing automation, feedback ingestion, multi-user workspaces, and generic multi-agent adapters.
 
@@ -33,7 +33,7 @@ Elves HQ is a local-first founder cockpit for running Codex elves across a produ
 - 2026-07-06 - Project created as a fresh local-first replacement direction for SaaS Maker's original operating-cockpit ambition.
 - 2026-07-06 - V0 OpenSpec change `local-task-rooms-v0` started.
 - 2026-07-06 - Local daemon and root SQLite store added for persisted workspace/room data and room notes.
-- 2026-07-07 - Task-room creation, isolated worktree runs, diff capture, check gates, CodeVetter gate adapter, a signal-backed Needs Me queue, and founder decision actions landed in the local cockpit.
+- 2026-07-07 - Task-room creation, isolated worktree runs, diff capture, check gates, CodeVetter gate adapter, generated worktree cleanup, a signal-backed Needs Me queue, and founder decision actions landed in the local cockpit.
 
 ## Products
 
@@ -51,6 +51,7 @@ Elves HQ is a local-first founder cockpit for running Codex elves across a produ
 - Write-capable Codex mode is available only inside isolated worktrees; it is not used for direct repo writes.
 - Check gates run inside the isolated worktree, capture output to `runs/<run-id>/check.log`, and attach pass/fail test artifacts to the room.
 - CodeVetter gate runs against captured worktree diffs, writes reports to `runs/<run-id>/codevetter.md`, attaches review artifacts, and marks rooms failed when blocking findings are detected.
+- Worktree cleanup removes generated `runs/<run-id>/worktree` checkouts on demand while preserving captured diff, check, and review artifacts.
 - Project-wise room creation is available from the cockpit and via `POST /api/rooms`.
 - Fleet registry import from `../saas-maker/foundry.projects.json` is wired through the daemon and UI.
 - Needs Me queue aggregates founder decisions from room asks, blocked/failed runs, failed gates, and ready artifacts via `GET /api/needs-me`.
@@ -58,9 +59,8 @@ Elves HQ is a local-first founder cockpit for running Codex elves across a produ
 
 ## Todo / Planned / Deferred / Blocked
 
-1. Add cleanup controls for old worktrees once review is resolved.
-2. Add richer fix-request prompts that feed founder notes back into the next Codex worktree run.
-3. Replace the local CodeVetter fallback scan with the full CodeVetter CLI once that interface is stable.
+1. Add richer fix-request prompts that feed founder notes back into the next Codex worktree run.
+2. Replace the local CodeVetter fallback scan with the full CodeVetter CLI once that interface is stable.
 
 ### Deferred
 

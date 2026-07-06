@@ -184,6 +184,53 @@ export class RoomProcessManager {
     };
   }
 
+  cleanupWorktree(runId: string) {
+    const run = this.store.getRun(runId);
+    if (run.status === "running") {
+      throw new Error("Cannot clean up a worktree while the room run is still active");
+    }
+    if (!run.mode.includes("worktree")) {
+      throw new Error("Cleanup requires a worktree-backed run");
+    }
+
+    const room = this.store.getRoom(run.roomId);
+    const product = this.store.getProduct(room.productId);
+    const sourcePath = resolve(projectRoot, product.localPath);
+    const worktreePath = resolve(runsRoot, run.id, "worktree");
+
+    if (!existsSync(worktreePath)) {
+      this.store.appendRoomLog(run.roomId, "warning", `No generated worktree found for ${run.id}; captured artifacts remain available.`);
+      return {
+        runId: run.id,
+        removed: false,
+        worktreePath,
+        room: this.store.getRoom(run.roomId)
+      };
+    }
+
+    const result = spawnSync("git", ["-C", sourcePath, "worktree", "remove", "--force", worktreePath], {
+      encoding: "utf8"
+    });
+    if (result.status !== 0) {
+      throw new Error(result.stderr.trim() || `Failed to remove worktree for ${run.id}`);
+    }
+
+    this.store.addArtifact(run.roomId, {
+      type: "log",
+      title: `Worktree cleanup for ${run.id}`,
+      summary: `Removed generated worktree at ${worktreePath}; captured diff, check, and review artifacts remain in runs/${run.id}.`,
+      status: "passed"
+    });
+    this.store.appendRoomLog(run.roomId, "success", `Removed generated worktree for ${run.id}. Captured artifacts remain available.`);
+
+    return {
+      runId: run.id,
+      removed: true,
+      worktreePath,
+      room: this.store.getRoom(run.roomId)
+    };
+  }
+
   private spawnRun(localPath: string, taskTitle: string, options: StartRunOptions, worktreePath?: string) {
     const cwd = resolve(projectRoot, localPath);
     const runCwd = worktreePath ?? cwd;

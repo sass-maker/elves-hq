@@ -172,6 +172,12 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    const cleanupWorktreeMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/cleanup-worktree$/);
+    if (request.method === "POST" && cleanupWorktreeMatch) {
+      sendJson(response, 200, processManager.cleanupWorktree(cleanupWorktreeMatch[1]));
+      return;
+    }
+
     const noteMatch = url.pathname.match(/^\/api\/rooms\/([^/]+)\/notes$/);
     if (request.method === "POST" && noteMatch) {
       const body = await readJson(request);
