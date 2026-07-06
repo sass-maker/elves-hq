@@ -1,8 +1,11 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import type { ElfRun } from "@elves-hq/core";
+import { RoomProcessManager } from "./process-manager";
 import { WorkspaceStore } from "./store";
 
 const port = Number(process.env.ELVES_HQ_DAEMON_PORT ?? 4327);
 const store = new WorkspaceStore();
+const processManager = new RoomProcessManager(store);
 
 function sendJson(response: ServerResponse, status: number, body: unknown) {
   response.writeHead(status, {
@@ -50,6 +53,28 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    const runsMatch = url.pathname.match(/^\/api\/rooms\/([^/]+)\/runs$/);
+    if (request.method === "GET" && runsMatch) {
+      sendJson(response, 200, { runs: store.listRuns(runsMatch[1]) });
+      return;
+    }
+
+    const startRunMatch = url.pathname.match(/^\/api\/rooms\/([^/]+)\/runs\/start$/);
+    if (request.method === "POST" && startRunMatch) {
+      const body = await readJson(request);
+      const mode = readRunMode(body);
+      const prompt = body && typeof body === "object" && typeof (body as { prompt?: unknown }).prompt === "string" ? (body as { prompt: string }).prompt : undefined;
+      const result = processManager.startRoomRun(startRunMatch[1], { mode, prompt });
+      sendJson(response, 200, result);
+      return;
+    }
+
+    const killRunMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/kill$/);
+    if (request.method === "POST" && killRunMatch) {
+      sendJson(response, 200, processManager.killRun(killRunMatch[1]));
+      return;
+    }
+
     const noteMatch = url.pathname.match(/^\/api\/rooms\/([^/]+)\/notes$/);
     if (request.method === "POST" && noteMatch) {
       const body = await readJson(request);
@@ -71,3 +96,16 @@ const server = createServer(async (request, response) => {
 server.listen(port, "127.0.0.1", () => {
   console.log(`Elves HQ local daemon listening on http://127.0.0.1:${port}`);
 });
+
+function readRunMode(body: unknown): ElfRun["mode"] {
+  if (!body || typeof body !== "object" || !("mode" in body)) {
+    return "dry-run";
+  }
+
+  const mode = (body as { mode?: unknown }).mode;
+  if (mode === "dry-run" || mode === "codex-readonly") {
+    return mode;
+  }
+
+  throw new Error("Unsupported run mode");
+}

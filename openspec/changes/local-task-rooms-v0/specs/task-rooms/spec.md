@@ -50,3 +50,21 @@ The V0 cockpit MUST persist room data in a local store owned by the repository c
 - **WHEN** the founder saves a note in a room
 - **THEN** the local daemon persists it to the local SQLite database
 - **AND** the updated room is returned to the cockpit
+
+### Requirement: Room run control
+
+The V0 daemon MUST be able to start, log, persist, and stop room-scoped runs.
+
+#### Scenario: Founder starts a dry run
+
+- **WHEN** the founder starts a dry run from a room
+- **THEN** the daemon creates a run record
+- **AND** process output is appended to the room logs
+- **AND** the room status updates from working to ready, failed, blocked, or killed when the process exits
+
+#### Scenario: Founder starts read-only Codex
+
+- **WHEN** the founder starts a read-only Codex inspection
+- **THEN** the daemon launches `codex exec` with read-only sandboxing
+- **AND** Codex output is appended to room logs
+- **AND** the daemon can stop the process if the founder kills it or it exceeds the runtime cap

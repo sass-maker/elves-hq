@@ -43,15 +43,17 @@ Elves HQ is a local-first founder cockpit for running Codex elves across a produ
 ## Features (shipped)
 
 - Initial V0 local cockpit scaffold with seeded project/task-room data.
-- Local daemon exposes `GET /api/health`, `GET /api/workspace`, and `POST /api/rooms/:id/notes`.
+- Local daemon exposes `GET /api/health`, `GET /api/workspace`, `POST /api/rooms/:id/notes`, `GET /api/rooms/:id/runs`, `POST /api/rooms/:id/runs/start`, and `POST /api/runs/:id/kill`.
 - SQLite persistence stores projects, elves, tasks, rooms, logs, asks, artifacts, decisions, and notes in ignored local `data/elves.db`.
+- Room runs support local dry runs and read-only Codex inspection, stream stdout/stderr into room logs, persist run records, support kill, and enforce a default runtime cap.
 
 ## Todo / Planned / Deferred / Blocked
 
 1. Wire product import from `../saas-maker/foundry.projects.json`.
-2. Add local daemon Codex process launch, log capture, git worktree creation, and kill/retry controls.
+2. Add git worktree creation before write-capable Codex runs.
 3. Add real changed-file, diff, and test-output artifact capture.
-4. Add CodeVetter as a review gate after the room loop is useful.
+4. Add retry controls that restart from the latest room context.
+5. Add CodeVetter as a review gate after the room loop is useful.
 
 ### Deferred
 

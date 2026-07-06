@@ -9,7 +9,9 @@
 - [x] Add local daemon API for workspace and room notes.
 - [x] Add local SQLite persistence for projects, elves, tasks, rooms, asks, decisions, logs, artifacts, and notes.
 - [x] Wire local product import from `../saas-maker/foundry.projects.json`.
-- [ ] Add Codex launch/log capture to local daemon.
+- [x] Add dry-run launch/log capture to local daemon.
+- [x] Add read-only Codex launch/log capture to local daemon.
+- [x] Add run kill endpoint and default runtime cap.
 - [ ] Add git worktree and diff artifact capture.
 - [ ] Add test/check gate execution.
 
@@ -21,4 +23,7 @@
 - [x] `GET /api/workspace`
 - [x] `POST /api/rooms/:id/notes`
 - [x] `POST /api/import/fleet-registry`
+- [x] `POST /api/rooms/:id/runs/start` dry run
+- [x] `POST /api/rooms/:id/runs/start` read-only Codex start
+- [x] `POST /api/runs/:id/kill`
 - [x] Browser smoke of local cockpit

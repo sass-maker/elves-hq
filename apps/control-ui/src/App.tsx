@@ -18,7 +18,7 @@ import {
   SquareTerminal,
   TestTube2
 } from "lucide-react";
-import { seedWorkspace, statusLabels, type Artifact, type Product, type Room, type RoomStatus, type WorkspaceSeed } from "@elves-hq/core";
+import { seedWorkspace, statusLabels, type Artifact, type ElfRun, type Product, type Room, type RoomStatus, type WorkspaceSeed } from "@elves-hq/core";
 import { useEffect, useMemo, useState } from "react";
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
@@ -81,6 +81,7 @@ export function App() {
   const [selectedProductId, setSelectedProductId] = useState<string>("all");
   const [selectedRoomId, setSelectedRoomId] = useState<string>(seedWorkspace.rooms[1]?.id ?? "");
   const [roomNotes, setRoomNotes] = useState<Record<string, string>>({});
+  const [roomRuns, setRoomRuns] = useState<Record<string, ElfRun[]>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -109,6 +110,47 @@ export function App() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (daemonState !== "local" || !selectedRoomId) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const refresh = async () => {
+      try {
+        const [workspaceResponse, runsResponse] = await Promise.all([
+          fetch(`${daemonBaseUrl}/api/workspace`),
+          fetch(`${daemonBaseUrl}/api/rooms/${selectedRoomId}/runs`)
+        ]);
+
+        if (!workspaceResponse.ok || !runsResponse.ok) {
+          return;
+        }
+
+        const [nextWorkspace, runsBody] = (await Promise.all([workspaceResponse.json(), runsResponse.json()])) as [
+          WorkspaceSeed,
+          { runs: ElfRun[] }
+        ];
+
+        if (!cancelled) {
+          setWorkspace(nextWorkspace);
+          setRoomRuns((current) => ({ ...current, [selectedRoomId]: runsBody.runs }));
+        }
+      } catch {
+        // Keep the last visible state; the badge already communicates daemon status on first load.
+      }
+    };
+
+    void refresh();
+    const interval = window.setInterval(refresh, 1500);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [daemonState, selectedRoomId]);
 
   const visibleRooms = useMemo(() => {
     const rooms =
@@ -173,6 +215,46 @@ export function App() {
     }
   };
 
+  const replaceRoom = (room: Room) => {
+    setWorkspace((current) => ({
+      ...current,
+      rooms: current.rooms.map((item) => (item.id === room.id ? room : item))
+    }));
+  };
+
+  const startRoomRun = async (roomId: string, mode: ElfRun["mode"]) => {
+    const response = await fetch(`${daemonBaseUrl}/api/rooms/${roomId}/runs/start`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ mode })
+    });
+
+    if (!response.ok) {
+      return;
+    }
+
+    const body = (await response.json()) as { room: Room; run: ElfRun };
+    replaceRoom(body.room);
+    setRoomRuns((current) => ({ ...current, [roomId]: [body.run, ...(current[roomId] ?? [])] }));
+  };
+
+  const killLatestRun = async (roomId: string) => {
+    const run = roomRuns[roomId]?.find((item) => item.status === "running");
+    if (!run) {
+      return;
+    }
+
+    const response = await fetch(`${daemonBaseUrl}/api/runs/${run.id}/kill`, { method: "POST" });
+    if (response.ok) {
+      setRoomRuns((current) => ({
+        ...current,
+        [roomId]: (current[roomId] ?? []).map((item) => (item.id === run.id ? { ...item, status: "killed" } : item))
+      }));
+    }
+  };
+
   const importFleetRegistry = async () => {
     const response = await fetch(`${daemonBaseUrl}/api/import/fleet-registry`, { method: "POST" });
     if (!response.ok) {
@@ -185,8 +267,8 @@ export function App() {
   };
 
   return (
-    <main className="grid h-screen min-h-[760px] min-w-[1120px] grid-cols-[minmax(240px,18vw)_minmax(430px,1fr)_minmax(430px,34vw)] gap-2.5 bg-[radial-gradient(circle_at_78%_12%,rgba(47,105,177,0.14),transparent_26%),linear-gradient(120deg,rgba(255,255,255,0.78),transparent_35%),#edf0ea] p-2.5 text-stone-900 max-lg:flex max-lg:h-auto max-lg:min-w-0 max-lg:flex-col">
-      <aside className="min-w-[230px] max-w-[380px] resize-x overflow-auto rounded-l-2xl rounded-r-md border border-stone-200 bg-[#fbfbf7]/95 p-4 shadow-2xl shadow-stone-900/10 max-lg:w-full max-lg:max-w-none max-lg:resize-none max-lg:rounded-2xl">
+    <main className="grid h-screen min-h-[760px] min-w-[1040px] grid-cols-[minmax(220px,18vw)_minmax(380px,1fr)_minmax(380px,34vw)] gap-2.5 bg-[radial-gradient(circle_at_78%_12%,rgba(47,105,177,0.14),transparent_26%),linear-gradient(120deg,rgba(255,255,255,0.78),transparent_35%),#edf0ea] p-2.5 text-stone-900 max-lg:flex max-lg:h-auto max-lg:min-w-0 max-lg:flex-col">
+      <aside className="min-w-[220px] max-w-[360px] resize-x overflow-auto rounded-l-2xl rounded-r-md border border-stone-200 bg-[#fbfbf7]/95 p-4 shadow-2xl shadow-stone-900/10 max-lg:w-full max-lg:max-w-none max-lg:resize-none max-lg:rounded-2xl">
         <div className="mb-6 flex items-center gap-3">
           <div className="grid h-10 w-10 place-items-center rounded-lg bg-stone-900 text-stone-50">
             <Sparkles size={18} />
@@ -238,7 +320,7 @@ export function App() {
         </div>
       </aside>
 
-      <section className="min-w-[420px] resize-x overflow-auto rounded-md border border-stone-200 bg-[#fbfbf7]/95 p-4 shadow-2xl shadow-stone-900/10 max-lg:w-full max-lg:min-w-0 max-lg:resize-none max-lg:rounded-2xl" aria-label="Task rooms">
+      <section className="min-w-[380px] resize-x overflow-auto rounded-md border border-stone-200 bg-[#fbfbf7]/95 p-4 shadow-2xl shadow-stone-900/10 max-lg:w-full max-lg:min-w-0 max-lg:resize-none max-lg:rounded-2xl" aria-label="Task rooms">
         <header className="mb-4 flex items-center justify-between gap-4">
           <div>
             <p className="text-[11px] font-extrabold uppercase text-stone-500">Task rooms</p>
@@ -247,7 +329,7 @@ export function App() {
             </h2>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="icon" type="button" aria-label="Start room">
+            <Button variant="outline" size="icon" type="button" aria-label="Start room" onClick={() => startRoomRun(selectedRoom.id, "dry-run")}>
               <Play size={17} />
             </Button>
             <Button type="button">
@@ -270,13 +352,17 @@ export function App() {
         </div>
       </section>
 
-      <section className="overflow-auto rounded-l-md rounded-r-2xl border border-stone-200 bg-[#fbfbf7]/95 shadow-2xl shadow-stone-900/10 max-lg:rounded-2xl" aria-label="Selected room">
+      <section className="min-w-0 overflow-auto rounded-l-md rounded-r-2xl border border-stone-200 bg-[#fbfbf7]/95 shadow-2xl shadow-stone-900/10 max-lg:rounded-2xl" aria-label="Selected room">
         <RoomDetail
           room={selectedRoom}
           workspace={workspace}
+          runs={roomRuns[selectedRoom.id] ?? []}
           noteDraft={roomNotes[selectedRoom.id] ?? ""}
           onNoteDraftChange={(value) => setRoomNotes((current) => ({ ...current, [selectedRoom.id]: value }))}
           onSaveNote={() => saveRoomNote(selectedRoom.id)}
+          onStartDryRun={() => startRoomRun(selectedRoom.id, "dry-run")}
+          onStartCodexReadOnly={() => startRoomRun(selectedRoom.id, "codex-readonly")}
+          onKillRun={() => killLatestRun(selectedRoom.id)}
         />
       </section>
     </main>
@@ -376,20 +462,29 @@ function Signal({ icon, label, active }: { icon: React.ReactNode; label: string;
 function RoomDetail({
   room,
   workspace,
+  runs,
   noteDraft,
   onNoteDraftChange,
-  onSaveNote
+  onSaveNote,
+  onStartDryRun,
+  onStartCodexReadOnly,
+  onKillRun
 }: {
   room: Room;
   workspace: WorkspaceSeed;
+  runs: ElfRun[];
   noteDraft: string;
   onNoteDraftChange: (value: string) => void;
   onSaveNote: () => void;
+  onStartDryRun: () => void;
+  onStartCodexReadOnly: () => void;
+  onKillRun: () => void;
 }) {
   const product = roomProduct(workspace, room);
   const elf = roomElf(workspace, room);
   const task = roomTask(workspace, room);
   const ask = room.asks[0];
+  const activeRun = runs.find((run) => run.status === "running");
 
   return (
     <div className="grid gap-4 p-4">
@@ -445,13 +540,34 @@ function RoomDetail({
         <div>
           <SectionTitle icon={<PanelRightOpen size={16} />} title="Actions" />
           <div className="grid grid-cols-2 gap-2">
-            <Button variant="outline" size="sm" type="button"><SquareTerminal size={15} />Logs</Button>
-            <Button variant="outline" size="sm" type="button"><GitBranch size={15} />Diff</Button>
-            <Button variant="outline" size="sm" type="button"><RotateCcw size={15} />Retry</Button>
-            <Button variant="destructive" size="sm" type="button"><CircleStop size={15} />Kill</Button>
+            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onStartDryRun}><Play size={15} />Dry</Button>
+            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onStartCodexReadOnly}><SquareTerminal size={15} />Read</Button>
+            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button"><GitBranch size={15} />Diff</Button>
+            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button"><RotateCcw size={15} />Retry</Button>
+            <Button className="min-w-0 px-2" variant="destructive" size="sm" type="button" onClick={onKillRun} disabled={!activeRun}><CircleStop size={15} />Kill</Button>
           </div>
         </div>
       </section>
+
+      {runs.length > 0 ? (
+        <section>
+          <SectionTitle icon={<Activity size={16} />} title="Runs" />
+          <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
+            {runs.slice(0, 4).map((run, index) => (
+              <div className={cn("flex items-center gap-3 p-3 text-sm", index !== Math.min(runs.length, 4) - 1 && "border-b border-stone-200")} key={run.id}>
+                <Badge variant={run.status === "running" ? "blue" : run.status === "completed" ? "green" : run.status === "killed" ? "amber" : "red"}>
+                  {run.status}
+                </Badge>
+                <div className="min-w-0">
+                  <strong className="block truncate">{run.mode}</strong>
+                  <p className="break-words text-xs text-stone-500">{run.command}</p>
+                </div>
+                <span className="ml-auto text-xs text-stone-500">{run.exitCode ?? "..."}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <section>
         <SectionTitle icon={<ScrollText size={16} />} title="Logs" />

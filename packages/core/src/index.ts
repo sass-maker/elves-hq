@@ -76,11 +76,23 @@ export interface Room {
   notes: string[];
 }
 
+export interface ElfRun {
+  id: string;
+  roomId: string;
+  mode: "dry-run" | "codex-readonly";
+  status: "running" | "completed" | "failed" | "killed";
+  command: string;
+  startedAt: string;
+  endedAt: string | null;
+  exitCode: number | null;
+}
+
 export interface WorkspaceSeed {
   products: Product[];
   elves: Elf[];
   tasks: Task[];
   rooms: Room[];
+  runs?: ElfRun[];
 }
 
 export const statusLabels: Record<RoomStatus, string> = {
@@ -301,4 +313,3 @@ export const seedWorkspace: WorkspaceSeed = {
     }
   ]
 };
-

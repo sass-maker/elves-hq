@@ -2,7 +2,19 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
-import { seedWorkspace, type Artifact, type Decision, type Elf, type Product, type Room, type RoomAsk, type RoomLog, type Task, type WorkspaceSeed } from "@elves-hq/core";
+import {
+  seedWorkspace,
+  type Artifact,
+  type Decision,
+  type Elf,
+  type ElfRun,
+  type Product,
+  type Room,
+  type RoomAsk,
+  type RoomLog,
+  type Task,
+  type WorkspaceSeed
+} from "@elves-hq/core";
 
 const databasePath = fileURLToPath(new URL("../../../data/elves.db", import.meta.url));
 const fleetRegistryPath = fileURLToPath(new URL("../../../../saas-maker/foundry.projects.json", import.meta.url));
@@ -68,6 +80,17 @@ interface NoteRow {
   created_at: string;
 }
 
+interface RunRow {
+  id: string;
+  room_id: string;
+  mode: ElfRun["mode"];
+  status: ElfRun["status"];
+  command: string;
+  started_at: string;
+  ended_at: string | null;
+  exit_code: number | null;
+}
+
 interface TaskRow {
   id: string;
   productId: string;
@@ -104,6 +127,106 @@ export class WorkspaceStore {
     const rooms = roomRows.map((row) => this.hydrateRoom(row));
 
     return { products, elves, tasks, rooms };
+  }
+
+  getRoom(roomId: string): Room {
+    const row = this.db.prepare("SELECT * FROM rooms WHERE id = ?").get(roomId) as unknown as RoomRow | undefined;
+    if (!row) {
+      throw new Error(`Room not found: ${roomId}`);
+    }
+    return this.hydrateRoom(row);
+  }
+
+  getProduct(productId: string): Product {
+    const product = this.db.prepare("SELECT * FROM products WHERE id = ?").get(productId) as unknown as Product | undefined;
+    if (!product) {
+      throw new Error(`Product not found: ${productId}`);
+    }
+    return product;
+  }
+
+  getTask(taskId: string): Task {
+    const row = this.db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId) as unknown as TaskRow | undefined;
+    if (!row) {
+      throw new Error(`Task not found: ${taskId}`);
+    }
+    return {
+      id: row.id,
+      productId: row.productId,
+      title: row.title,
+      acceptanceCriteria: JSON.parse(row.acceptanceCriteria) as string[],
+      priority: row.priority
+    };
+  }
+
+  createRun(roomId: string, mode: ElfRun["mode"], command: string): ElfRun {
+    const room = this.getRoom(roomId);
+    const runId = `run-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    const startedAt = new Date().toISOString();
+    this.db
+      .prepare(
+        "INSERT INTO elf_runs (id, room_id, mode, status, command, started_at, ended_at, exit_code) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL)"
+      )
+      .run(runId, room.id, mode, "running", command, startedAt);
+    this.updateRoom(room.id, "working", `Started ${mode === "codex-readonly" ? "Codex read-only" : "local dry"} run ${runId}.`);
+    this.appendRoomLog(room.id, "info", `Started ${mode} run: ${command}`);
+
+    return {
+      id: runId,
+      roomId: room.id,
+      mode,
+      status: "running",
+      command,
+      startedAt,
+      endedAt: null,
+      exitCode: null
+    };
+  }
+
+  finishRun(runId: string, status: ElfRun["status"], exitCode: number | null): Room {
+    const run = this.db.prepare("SELECT * FROM elf_runs WHERE id = ?").get(runId) as unknown as RunRow | undefined;
+    if (!run) {
+      throw new Error(`Run not found: ${runId}`);
+    }
+
+    const endedAt = new Date().toISOString();
+    this.db.prepare("UPDATE elf_runs SET status = ?, ended_at = ?, exit_code = ? WHERE id = ?").run(status, endedAt, exitCode, runId);
+
+    const roomStatus = status === "completed" ? "ready" : status === "killed" ? "blocked" : "failed";
+    const summary =
+      status === "completed"
+        ? `Run ${runId} completed. Review the logs and artifacts before accepting the room.`
+        : status === "killed"
+          ? `Run ${runId} was killed by the founder.`
+          : `Run ${runId} failed with exit code ${exitCode ?? "unknown"}.`;
+
+    this.updateRoom(run.room_id, roomStatus, summary);
+    this.appendRoomLog(run.room_id, status === "completed" ? "success" : status === "killed" ? "warning" : "error", summary);
+    return this.getRoom(run.room_id);
+  }
+
+  appendRoomLog(roomId: string, level: RoomLog["level"], message: string): RoomLog {
+    const id = `log-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    this.db.prepare("INSERT INTO room_logs (id, room_id, time, level, message) VALUES (?, ?, ?, ?, ?)").run(id, roomId, time, level, message);
+    this.db.prepare("UPDATE rooms SET last_activity_at = ? WHERE id = ?").run(time, roomId);
+
+    return { id, time, level, message };
+  }
+
+  listRuns(roomId: string): ElfRun[] {
+    return (this.db.prepare("SELECT * FROM elf_runs WHERE room_id = ? ORDER BY started_at DESC").all(roomId) as unknown as RunRow[]).map(
+      (row): ElfRun => ({
+        id: row.id,
+        roomId: row.room_id,
+        mode: row.mode,
+        status: row.status,
+        command: row.command,
+        startedAt: row.started_at,
+        endedAt: row.ended_at,
+        exitCode: row.exit_code
+      })
+    );
   }
 
   importFleetRegistry(): { imported: number } {
@@ -270,7 +393,22 @@ export class WorkspaceStore {
         body TEXT NOT NULL,
         created_at TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS elf_runs (
+        id TEXT PRIMARY KEY,
+        room_id TEXT NOT NULL,
+        mode TEXT NOT NULL,
+        status TEXT NOT NULL,
+        command TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        ended_at TEXT,
+        exit_code INTEGER
+      );
     `);
+  }
+
+  private updateRoom(roomId: string, status: Room["status"], summary: string) {
+    this.db.prepare("UPDATE rooms SET status = ?, summary = ?, last_activity_at = ? WHERE id = ?").run(status, summary, "now", roomId);
   }
 
   private seedIfEmpty() {
