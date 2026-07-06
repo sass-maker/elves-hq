@@ -12,6 +12,7 @@ const runsRoot = fileURLToPath(new URL("../../../runs/", import.meta.url));
 export interface StartRunOptions {
   mode: ElfRun["mode"];
   prompt?: string;
+  simulatedOutput?: string;
 }
 
 interface RunningProcess {
@@ -37,8 +38,9 @@ export class RoomProcessManager {
     const memory = this.store.getProductMemory(product.id);
     const playbook = this.store.getPlaybook(room.playbookId);
     const command = this.buildCommandDescription(product.localPath, task.title, options);
-    const prompt = options.prompt?.trim() || buildRoomRunPrompt(room, product, task, memory, playbook, options.mode);
-    const runOptions = { ...options, prompt };
+    const founderPrompt = options.prompt?.trim();
+    const prompt = founderPrompt || buildRoomRunPrompt(room, product, task, memory, playbook, options.mode);
+    const runOptions = { ...options, prompt, simulatedOutput: options.mode === "dry-run" ? founderPrompt : undefined };
     const run = this.store.createRun(room.id, options.mode, command);
     this.captureRunPrompt(run, prompt);
     let worktree: { path: string; branchName: string } | undefined;
@@ -274,6 +276,7 @@ export class RoomProcessManager {
   private spawnRun(localPath: string, taskTitle: string, options: StartRunOptions, worktreePath?: string) {
     const cwd = resolve(projectRoot, localPath);
     const runCwd = worktreePath ?? cwd;
+    const dryRunFinalLine = options.simulatedOutput?.trim() || "Dry run complete. Real Codex execution is available through codex-readonly mode.";
 
     if (options.mode === "dry-run") {
       return spawn(
@@ -284,7 +287,7 @@ export class RoomProcessManager {
             "const lines = [",
             JSON.stringify(`Elf opened local room for: ${taskTitle}`) + ",",
             JSON.stringify("Loaded room context and acceptance criteria.") + ",",
-            JSON.stringify("Dry run complete. Real Codex execution is available through codex-readonly mode.") + "",
+            JSON.stringify(dryRunFinalLine) + "",
             "];",
             "let i = 0;",
             "const tick = () => {",
@@ -403,6 +406,10 @@ export class RoomProcessManager {
       const trimmed = line.trim();
       if (trimmed) {
         this.store.appendRoomLog(roomId, level, trimmed);
+        const ask = parseElfAskLine(trimmed);
+        if (ask) {
+          this.store.openRoomAsk(roomId, ask);
+        }
       }
     }
   }
@@ -563,8 +570,36 @@ function buildRoomRunPrompt(room: Room, product: Product, task: Task, memory: Pr
     "## Instructions",
     modeInstruction,
     "Use the founder notes and requested-fix context as the highest-priority room guidance after the acceptance criteria.",
+    'If you need founder judgment, print one complete line exactly like: ELF_ASK: {"question":"...","options":["Option A","Option B"],"recommendation":"..."}. Use this only for decisions the founder actually needs to make.',
     "Return a concise status update with concrete files changed, commands run, blockers, and remaining founder decisions."
   ].join("\n");
+}
+
+function parseElfAskLine(line: string) {
+  const prefix = "ELF_ASK:";
+  if (!line.startsWith(prefix)) {
+    return undefined;
+  }
+
+  try {
+    const record = JSON.parse(line.slice(prefix.length).trim()) as unknown;
+    if (!record || typeof record !== "object") {
+      return undefined;
+    }
+
+    const ask = record as { question?: unknown; options?: unknown; recommendation?: unknown };
+    const question = typeof ask.question === "string" ? ask.question.trim() : "";
+    const recommendation = typeof ask.recommendation === "string" ? ask.recommendation.trim() : "";
+    const options = Array.isArray(ask.options) ? ask.options.filter((option): option is string => typeof option === "string").map((option) => option.trim()).filter(Boolean) : [];
+
+    if (!question || !recommendation || options.length === 0 || options.length > 4) {
+      return undefined;
+    }
+
+    return { question, options, recommendation };
+  } catch {
+    return undefined;
+  }
 }
 
 function detectCheckCommand(worktreePath: string, requestedScript: CheckScriptKey | undefined) {

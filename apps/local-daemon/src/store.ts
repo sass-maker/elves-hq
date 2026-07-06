@@ -333,10 +333,13 @@ export class WorkspaceStore {
     const endedAt = new Date().toISOString();
     this.db.prepare("UPDATE elf_runs SET status = ?, ended_at = ?, exit_code = ? WHERE id = ?").run(status, endedAt, exitCode, runId);
 
-    const roomStatus = status === "completed" ? "ready" : status === "killed" ? "blocked" : "failed";
+    const hasOpenAsk = (this.db.prepare("SELECT COUNT(*) AS count FROM room_asks WHERE room_id = ?").get(run.room_id) as { count: number }).count > 0;
+    const roomStatus = status === "completed" ? (hasOpenAsk ? "asking" : "ready") : status === "killed" ? "blocked" : "failed";
     const summary =
-      status === "completed"
-        ? `Run ${runId} completed. Review the logs and artifacts before accepting the room.`
+      status === "completed" && hasOpenAsk
+        ? `Run ${runId} completed after opening an ask for founder input.`
+        : status === "completed"
+          ? `Run ${runId} completed. Review the logs and artifacts before accepting the room.`
         : status === "killed"
           ? `Run ${runId} was killed by the founder.`
           : `Run ${runId} failed with exit code ${exitCode ?? "unknown"}.`;
@@ -367,6 +370,29 @@ export class WorkspaceStore {
   markRoomStatus(roomId: string, status: Room["status"], summary: string): Room {
     this.updateRoom(roomId, status, summary);
     return this.getRoom(roomId);
+  }
+
+  openRoomAsk(roomId: string, ask: Omit<RoomAsk, "id" | "createdAt">): Room {
+    const room = this.getRoom(roomId);
+    const askId = `ask-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    const createdAt = new Date().toISOString();
+    const summary = `Elf asks: ${ask.question}`;
+
+    this.db.exec("BEGIN");
+    try {
+      this.db.prepare("DELETE FROM room_asks WHERE room_id = ?").run(room.id);
+      this.db
+        .prepare("INSERT INTO room_asks (id, room_id, question, options_json, recommendation, created_at) VALUES (?, ?, ?, ?, ?, ?)")
+        .run(askId, room.id, ask.question, JSON.stringify(ask.options), ask.recommendation, createdAt);
+      this.db.prepare("UPDATE rooms SET status = ?, summary = ?, last_activity_at = ? WHERE id = ?").run("asking", summary, "now", room.id);
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+
+    this.appendRoomLog(room.id, "warning", `Elf opened an ask: ${ask.question}`);
+    return this.getRoom(room.id);
   }
 
   resolveDecision(roomId: string, input: ResolveDecisionInput): Room {
