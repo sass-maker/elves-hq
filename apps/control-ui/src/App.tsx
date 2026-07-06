@@ -12,6 +12,7 @@ import {
   HelpCircle,
   Maximize2,
   MessageSquare,
+  Minimize2,
   PanelRightOpen,
   Play,
   Download,
@@ -171,6 +172,7 @@ export function App() {
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
   const [paneLayout, setPaneLayout] = useState<PaneLayout>(readStoredPaneLayout);
   const [roomWorkbenchTabsById, setRoomWorkbenchTabsById] = useState<Record<string, RoomWorkbenchTab>>({});
+  const [focusedRoomId, setFocusedRoomId] = useState<string | null>(null);
   const [newRoom, setNewRoom] = useState({
     productId: seedWorkspace.products[0]?.id ?? "",
     assignedElfId: defaultRoomElfId(seedWorkspace),
@@ -284,7 +286,8 @@ export function App() {
     selectedMemoryDraftKey && selectedMemoryDraftKey in memoryDrafts
       ? memoryDrafts[selectedMemoryDraftKey]
       : selectedProductMemory?.sections.find((section) => section.key === selectedMemorySection)?.body ?? "";
-  const mainGridTemplateColumns = `${paneLayout.fleet}px ${paneLayout.rooms}px minmax(380px, 1fr)`;
+  const isRoomFocused = focusedRoomId === selectedRoom?.id;
+  const mainGridTemplateColumns = isRoomFocused ? "minmax(720px, 1fr)" : `${paneLayout.fleet}px ${paneLayout.rooms}px minmax(380px, 1fr)`;
   const selectedRoomWorkbenchTab = selectedRoom ? roomWorkbenchTabsById[selectedRoom.id] ?? "logs" : "logs";
 
   useEffect(() => {
@@ -669,6 +672,7 @@ export function App() {
       className="grid h-screen min-h-[760px] min-w-[1040px] gap-2.5 bg-[radial-gradient(circle_at_78%_12%,rgba(47,105,177,0.14),transparent_26%),linear-gradient(120deg,rgba(255,255,255,0.78),transparent_35%),#edf0ea] p-2.5 text-stone-900 max-lg:flex max-lg:h-auto max-lg:min-w-0 max-lg:flex-col"
       style={{ gridTemplateColumns: mainGridTemplateColumns }}
     >
+      {!isRoomFocused ? (
       <aside className="min-w-[220px] overflow-auto rounded-l-2xl rounded-r-md border border-stone-200 bg-[#fbfbf7]/95 p-4 shadow-2xl shadow-stone-900/10 max-lg:w-full max-lg:max-w-none max-lg:rounded-2xl">
         <div className="mb-6 flex items-center gap-3">
           <div className="grid h-10 w-10 place-items-center rounded-lg bg-stone-900 text-stone-50">
@@ -720,7 +724,9 @@ export function App() {
           <StatusPill status="failed" count={counts.failed + counts.blocked} label="Stuck" />
         </div>
       </aside>
+      ) : null}
 
+      {!isRoomFocused ? (
       <section className="min-w-[380px] overflow-auto rounded-md border border-stone-200 bg-[#fbfbf7]/95 p-4 shadow-2xl shadow-stone-900/10 max-lg:w-full max-lg:min-w-0 max-lg:rounded-2xl" aria-label="Task rooms">
         <header className="mb-4 grid gap-3">
           <div className="flex items-center justify-between gap-4">
@@ -868,8 +874,9 @@ export function App() {
           ))}
         </div>
       </section>
+      ) : null}
 
-      <section className="min-w-0 overflow-auto rounded-l-md rounded-r-2xl border border-stone-200 bg-[#fbfbf7]/95 shadow-2xl shadow-stone-900/10 max-lg:rounded-2xl" aria-label="Selected room">
+      <section className={cn("min-w-0 overflow-auto border border-stone-200 bg-[#fbfbf7]/95 shadow-2xl shadow-stone-900/10 max-lg:rounded-2xl", isRoomFocused ? "rounded-2xl" : "rounded-l-md rounded-r-2xl")} aria-label="Selected room">
         <RoomDetail
           room={selectedRoom}
           workspace={workspace}
@@ -885,6 +892,7 @@ export function App() {
           selectedMemorySection={selectedMemorySection}
           memoryDraft={selectedMemorySectionBody}
           activeWorkbenchTab={selectedRoomWorkbenchTab}
+          isFocused={isRoomFocused}
           onSelectMemorySection={setSelectedMemorySection}
           onMemoryDraftChange={(value) => setMemoryDrafts((current) => ({ ...current, [selectedMemoryDraftKey]: value }))}
           onSaveMemory={(section, body) => saveProductMemorySection(selectedRoom.productId, section, body)}
@@ -904,6 +912,8 @@ export function App() {
           onKillRun={() => killLatestRun(selectedRoom.id)}
           onDecisionAction={(action, note) => performDecisionAction(selectedRoom.id, action, note)}
           onAnswerAsk={(askId, answer, note) => answerRoomAsk(selectedRoom.id, askId, answer, note)}
+          onFocusRoom={() => setFocusedRoomId(selectedRoom.id)}
+          onExitFocusRoom={() => setFocusedRoomId(null)}
         />
       </section>
     </main>
@@ -1279,6 +1289,7 @@ function RoomDetail({
   selectedMemorySection,
   memoryDraft,
   activeWorkbenchTab,
+  isFocused,
   onSelectMemorySection,
   onMemoryDraftChange,
   onSaveMemory,
@@ -1297,7 +1308,9 @@ function RoomDetail({
   onGenerateTranscript,
   onKillRun,
   onDecisionAction,
-  onAnswerAsk
+  onAnswerAsk,
+  onFocusRoom,
+  onExitFocusRoom
 }: {
   room: Room;
   workspace: WorkspaceSeed;
@@ -1313,6 +1326,7 @@ function RoomDetail({
   selectedMemorySection: ProductMemorySectionKey;
   memoryDraft: string;
   activeWorkbenchTab: RoomWorkbenchTab;
+  isFocused: boolean;
   onSelectMemorySection: (section: ProductMemorySectionKey) => void;
   onMemoryDraftChange: (value: string) => void;
   onSaveMemory: (section: ProductMemorySectionKey, body: string) => void;
@@ -1332,6 +1346,8 @@ function RoomDetail({
   onKillRun: () => void;
   onDecisionAction: (action: DecisionAction, note?: string) => void;
   onAnswerAsk: (askId: string, answer: string, note?: string) => void;
+  onFocusRoom: () => void;
+  onExitFocusRoom: () => void;
 }) {
   const product = roomProduct(workspace, room);
   const elf = roomElf(workspace, room);
@@ -1350,8 +1366,8 @@ function RoomDetail({
           <p className="text-[11px] font-extrabold uppercase text-stone-500">{product.name} · {task.priority} priority</p>
           <h2 className="text-2xl font-bold tracking-normal">{room.title}</h2>
         </div>
-        <Button variant="outline" size="icon" type="button" aria-label="Expand room">
-          <Maximize2 size={17} />
+        <Button variant="outline" size="icon" type="button" aria-label={isFocused ? "Exit focused room" : "Expand room"} onClick={isFocused ? onExitFocusRoom : onFocusRoom}>
+          {isFocused ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
         </Button>
       </header>
 
@@ -1584,17 +1600,26 @@ function RoomWorkbench({
         <SectionTitle icon={<PanelRightOpen size={16} />} title="Room workbench" />
         <div className="flex rounded-lg border border-stone-200 bg-stone-50 p-1" aria-label="Room workbench tabs">
           {roomWorkbenchTabs.map((tab) => (
-            <Button
-              className={cn("h-7 px-2 text-[11px]", activeTab === tab.id && "bg-stone-900 text-stone-50 hover:bg-stone-800")}
-              variant="ghost"
-              size="sm"
-              type="button"
+            <div
+              className={cn(
+                "flex h-7 cursor-pointer items-center gap-1 rounded-md px-2 text-[11px] font-semibold transition-colors",
+                activeTab === tab.id ? "text-stone-900" : "text-stone-700"
+              )}
+              role="button"
+              tabIndex={0}
               key={tab.id}
               aria-pressed={activeTab === tab.id}
               onClick={() => onSelectTab(tab.id)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  onSelectTab(tab.id);
+                }
+              }}
             >
+              {activeTab === tab.id ? <CheckCircle2 size={12} /> : null}
               {tab.label}
-            </Button>
+            </div>
           ))}
         </div>
       </div>
