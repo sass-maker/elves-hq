@@ -123,6 +123,10 @@ function roomPlaybook(workspace: WorkspaceSeed, room: Room): Playbook | undefine
   return room.playbookId ? workspace.playbooks.find((item) => item.id === room.playbookId) : undefined;
 }
 
+function defaultRoomElfId(workspace: WorkspaceSeed) {
+  return workspace.elves.find((elf) => elf.role === "builder")?.id ?? workspace.elves[0]?.id ?? "";
+}
+
 export function App() {
   const [workspace, setWorkspace] = useState<WorkspaceSeed>(seedWorkspace);
   const [daemonState, setDaemonState] = useState<"connecting" | "local" | "fallback">("connecting");
@@ -144,6 +148,7 @@ export function App() {
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
   const [newRoom, setNewRoom] = useState({
     productId: seedWorkspace.products[0]?.id ?? "",
+    assignedElfId: defaultRoomElfId(seedWorkspace),
     playbookId: seedWorkspace.playbooks[0]?.id ?? "",
     title: "",
     acceptanceCriteria: ""
@@ -180,6 +185,16 @@ export function App() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    setNewRoom((current) => {
+      const assignedElfId = workspace.elves.some((elf) => elf.id === current.assignedElfId) ? current.assignedElfId : defaultRoomElfId(workspace);
+      if (assignedElfId === current.assignedElfId) {
+        return current;
+      }
+      return { ...current, assignedElfId };
+    });
+  }, [workspace.elves]);
 
   useEffect(() => {
     if (daemonState !== "local" || !selectedRoomId) {
@@ -522,7 +537,11 @@ export function App() {
     setDecisionItems(buildDecisionItems(body.workspace.rooms));
     setDailyBrief(buildDailyBrief(body.workspace));
     setDaemonState("local");
-    setNewRoom((current) => ({ ...current, productId: body.workspace.products[0]?.id ?? current.productId }));
+    setNewRoom((current) => ({
+      ...current,
+      productId: body.workspace.products[0]?.id ?? current.productId,
+      assignedElfId: body.workspace.elves.some((elf) => elf.id === current.assignedElfId) ? current.assignedElfId : defaultRoomElfId(body.workspace)
+    }));
   };
 
   const createRoom = async () => {
@@ -538,6 +557,7 @@ export function App() {
       },
       body: JSON.stringify({
         productId: newRoom.productId,
+        assignedElfId: newRoom.assignedElfId || undefined,
         playbookId: newRoom.playbookId,
         title,
         acceptanceCriteria: newRoom.acceptanceCriteria
@@ -715,6 +735,20 @@ export function App() {
                   onChange={(event) => setNewRoom((current) => ({ ...current, title: event.target.value }))}
                   placeholder="Fix flaky onboarding test"
                 />
+              </label>
+              <label className="grid gap-1 text-sm font-semibold">
+                Elf
+                <select
+                  className="h-10 rounded-md border border-stone-200 bg-white px-3 text-sm"
+                  value={newRoom.assignedElfId}
+                  onChange={(event) => setNewRoom((current) => ({ ...current, assignedElfId: event.target.value }))}
+                >
+                  {workspace.elves.map((elf) => (
+                    <option key={elf.id} value={elf.id}>
+                      {elf.name} · {elf.role}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label className="grid gap-1 text-sm font-semibold">
                 Playbook
