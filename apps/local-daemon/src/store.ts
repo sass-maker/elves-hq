@@ -1,10 +1,11 @@
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import {
   buildDecisionItems,
   buildDailyBrief,
+  productMemorySectionDefinitions,
   seedWorkspace,
   type Artifact,
   type DailyBrief,
@@ -14,6 +15,9 @@ import {
   type Elf,
   type ElfRun,
   type Product,
+  type ProductMemory,
+  type ProductMemorySection,
+  type ProductMemorySectionKey,
   type Room,
   type RoomAsk,
   type RoomLog,
@@ -23,6 +27,7 @@ import {
 
 const databasePath = fileURLToPath(new URL("../../../data/elves.db", import.meta.url));
 const fleetRegistryPath = fileURLToPath(new URL("../../../../saas-maker/foundry.projects.json", import.meta.url));
+const memoryRoot = fileURLToPath(new URL("../../../memory/", import.meta.url));
 
 interface RegistryProject {
   desc?: string;
@@ -152,6 +157,45 @@ export class WorkspaceStore {
 
   getDailyBrief(): DailyBrief {
     return buildDailyBrief(this.getWorkspace());
+  }
+
+  getProductMemory(productId: string): ProductMemory {
+    const product = this.getProduct(productId);
+    const productMemoryPath = resolve(memoryRoot, safePathSegment(product.slug));
+    mkdirSync(productMemoryPath, { recursive: true });
+
+    const sections = productMemorySectionDefinitions.map((definition): ProductMemorySection => {
+      const filePath = resolve(productMemoryPath, definition.filename);
+      if (!existsSync(filePath)) {
+        writeFileSync(filePath, defaultMemoryBody(product, definition.key));
+      }
+
+      return {
+        ...definition,
+        body: readFileSync(filePath, "utf8"),
+        updatedAt: statSync(filePath).mtime.toISOString()
+      };
+    });
+
+    return {
+      productId: product.id,
+      productName: product.name,
+      productSlug: product.slug,
+      sections
+    };
+  }
+
+  updateProductMemorySection(productId: string, key: ProductMemorySectionKey, body: string): ProductMemory {
+    const product = this.getProduct(productId);
+    const definition = productMemorySectionDefinitions.find((item) => item.key === key);
+    if (!definition) {
+      throw new Error(`Unsupported memory section: ${key}`);
+    }
+
+    const productMemoryPath = resolve(memoryRoot, safePathSegment(product.slug));
+    mkdirSync(productMemoryPath, { recursive: true });
+    writeFileSync(resolve(productMemoryPath, definition.filename), `${body.trimEnd()}\n`);
+    return this.getProductMemory(productId);
   }
 
   getRoom(roomId: string): Room {
@@ -735,6 +779,28 @@ function slugify(value: string) {
     .replace(/([a-z])([A-Z])/g, "$1-$2")
     .replace(/_/g, "-")
     .toLowerCase();
+}
+
+function safePathSegment(value: string) {
+  return slugify(value).replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "") || "product";
+}
+
+function defaultMemoryBody(product: Product, key: ProductMemorySectionKey) {
+  const headings: Record<ProductMemorySectionKey, string> = {
+    PRODUCT: "Product",
+    STRATEGY: "Strategy",
+    ARCHITECTURE: "Architecture",
+    DECISIONS: "Decisions",
+    DO_NOT_DO: "Do Not Do",
+    RECENT_LEARNINGS: "Recent Learnings"
+  };
+
+  const intro =
+    key === "PRODUCT"
+      ? [`Product: ${product.name}`, `Current goal: ${product.currentGoal}`]
+      : [`Product: ${product.name}`, "Add durable notes here."];
+
+  return [`# ${headings[key]}`, "", ...intro, "", "## Notes", "", "- "].join("\n");
 }
 
 function displayName(key: string, repoName: string) {

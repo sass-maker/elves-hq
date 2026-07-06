@@ -112,6 +112,26 @@ export interface DailyBrief {
   recommendedNext: DailyBriefRecommendation[];
 }
 
+export type ProductMemorySectionKey = "PRODUCT" | "STRATEGY" | "ARCHITECTURE" | "DECISIONS" | "DO_NOT_DO" | "RECENT_LEARNINGS";
+
+export interface ProductMemorySectionDefinition {
+  key: ProductMemorySectionKey;
+  title: string;
+  filename: string;
+}
+
+export interface ProductMemorySection extends ProductMemorySectionDefinition {
+  body: string;
+  updatedAt: string | null;
+}
+
+export interface ProductMemory {
+  productId: string;
+  productName: string;
+  productSlug: string;
+  sections: ProductMemorySection[];
+}
+
 export interface Room {
   id: string;
   productId: string;
@@ -159,6 +179,15 @@ export const statusLabels: Record<RoomStatus, string> = {
   done: "Done",
   idle: "Idle"
 };
+
+export const productMemorySectionDefinitions: ProductMemorySectionDefinition[] = [
+  { key: "PRODUCT", title: "Product", filename: "PRODUCT.md" },
+  { key: "STRATEGY", title: "Strategy", filename: "STRATEGY.md" },
+  { key: "ARCHITECTURE", title: "Architecture", filename: "ARCHITECTURE.md" },
+  { key: "DECISIONS", title: "Decisions", filename: "DECISIONS.md" },
+  { key: "DO_NOT_DO", title: "Do Not Do", filename: "DO_NOT_DO.md" },
+  { key: "RECENT_LEARNINGS", title: "Recent Learnings", filename: "RECENT_LEARNINGS.md" }
+];
 
 const decisionRiskRank: Record<DecisionItem["risk"], number> = {
   low: 1,

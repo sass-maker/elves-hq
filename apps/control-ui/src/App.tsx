@@ -1,6 +1,7 @@
 import {
   Activity,
   ArrowRight,
+  BookOpenText,
   CalendarDays,
   CheckCircle2,
   CircleStop,
@@ -35,6 +36,8 @@ import {
   type DecisionItem,
   type ElfRun,
   type Product,
+  type ProductMemory,
+  type ProductMemorySectionKey,
   type Room,
   type RoomStatus,
   type WorkspaceSeed
@@ -129,6 +132,9 @@ export function App() {
   const [cleanupPreview, setCleanupPreview] = useState<Record<string, string>>({});
   const [decisionItems, setDecisionItems] = useState<DecisionItem[]>(buildDecisionItems(seedWorkspace.rooms));
   const [dailyBrief, setDailyBrief] = useState<DailyBrief>(buildDailyBrief(seedWorkspace));
+  const [productMemoryById, setProductMemoryById] = useState<Record<string, ProductMemory>>({});
+  const [selectedMemorySection, setSelectedMemorySection] = useState<ProductMemorySectionKey>("PRODUCT");
+  const [memoryDrafts, setMemoryDrafts] = useState<Record<string, string>>({});
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
   const [newRoom, setNewRoom] = useState({
     productId: seedWorkspace.products[0]?.id ?? "",
@@ -225,6 +231,40 @@ export function App() {
   }, [selectedProductId, workspace.rooms]);
 
   const selectedRoom = workspace.rooms.find((room) => room.id === selectedRoomId) ?? visibleRooms[0] ?? workspace.rooms[0];
+  const selectedProductMemory = selectedRoom ? productMemoryById[selectedRoom.productId] : undefined;
+  const selectedMemoryDraftKey = selectedRoom ? `${selectedRoom.productId}:${selectedMemorySection}` : "";
+  const selectedMemorySectionBody =
+    selectedMemoryDraftKey && selectedMemoryDraftKey in memoryDrafts
+      ? memoryDrafts[selectedMemoryDraftKey]
+      : selectedProductMemory?.sections.find((section) => section.key === selectedMemorySection)?.body ?? "";
+
+  useEffect(() => {
+    if (daemonState !== "local" || !selectedRoom?.productId) {
+      return;
+    }
+
+    let cancelled = false;
+
+    fetch(`${daemonBaseUrl}/api/products/${selectedRoom.productId}/memory`)
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(`Daemon returned ${response.status}`);
+        }
+        return (await response.json()) as ProductMemory;
+      })
+      .then((memory) => {
+        if (!cancelled) {
+          setProductMemoryById((current) => ({ ...current, [memory.productId]: memory }));
+        }
+      })
+      .catch(() => {
+        // Memory is an additive V0 layer; keep the room usable if the file API is unavailable.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [daemonState, selectedRoom?.productId]);
 
   const counts = useMemo(() => {
     return workspace.rooms.reduce(
@@ -499,6 +539,28 @@ export function App() {
     setIsCreatingRoom(false);
   };
 
+  const saveProductMemorySection = async (productId: string, section: ProductMemorySectionKey, body: string) => {
+    const response = await fetch(`${daemonBaseUrl}/api/products/${productId}/memory/${section}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ body })
+    });
+
+    if (!response.ok) {
+      return;
+    }
+
+    const memory = (await response.json()) as ProductMemory;
+    setProductMemoryById((current) => ({ ...current, [memory.productId]: memory }));
+    setMemoryDrafts((current) => {
+      const next = { ...current };
+      delete next[`${productId}:${section}`];
+      return next;
+    });
+  };
+
   return (
     <main className="grid h-screen min-h-[760px] min-w-[1040px] grid-cols-[minmax(220px,18vw)_minmax(380px,1fr)_minmax(380px,34vw)] gap-2.5 bg-[radial-gradient(circle_at_78%_12%,rgba(47,105,177,0.14),transparent_26%),linear-gradient(120deg,rgba(255,255,255,0.78),transparent_35%),#edf0ea] p-2.5 text-stone-900 max-lg:flex max-lg:h-auto max-lg:min-w-0 max-lg:flex-col">
       <aside className="min-w-[220px] max-w-[360px] resize-x overflow-auto rounded-l-2xl rounded-r-md border border-stone-200 bg-[#fbfbf7]/95 p-4 shadow-2xl shadow-stone-900/10 max-lg:w-full max-lg:max-w-none max-lg:resize-none max-lg:rounded-2xl">
@@ -676,6 +738,12 @@ export function App() {
           checkPreview={checkPreview[selectedRoom.id]}
           codevetterPreview={codevetterPreview[selectedRoom.id]}
           cleanupPreview={cleanupPreview[selectedRoom.id]}
+          productMemory={selectedProductMemory}
+          selectedMemorySection={selectedMemorySection}
+          memoryDraft={selectedMemorySectionBody}
+          onSelectMemorySection={setSelectedMemorySection}
+          onMemoryDraftChange={(value) => setMemoryDrafts((current) => ({ ...current, [selectedMemoryDraftKey]: value }))}
+          onSaveMemory={(section, body) => saveProductMemorySection(selectedRoom.productId, section, body)}
           noteDraft={roomNotes[selectedRoom.id] ?? ""}
           onNoteDraftChange={(value) => setRoomNotes((current) => ({ ...current, [selectedRoom.id]: value }))}
           onSaveNote={() => saveRoomNote(selectedRoom.id)}
@@ -977,6 +1045,12 @@ function RoomDetail({
   checkPreview,
   codevetterPreview,
   cleanupPreview,
+  productMemory,
+  selectedMemorySection,
+  memoryDraft,
+  onSelectMemorySection,
+  onMemoryDraftChange,
+  onSaveMemory,
   noteDraft,
   onNoteDraftChange,
   onSaveNote,
@@ -999,6 +1073,12 @@ function RoomDetail({
   checkPreview?: string;
   codevetterPreview?: string;
   cleanupPreview?: string;
+  productMemory?: ProductMemory;
+  selectedMemorySection: ProductMemorySectionKey;
+  memoryDraft: string;
+  onSelectMemorySection: (section: ProductMemorySectionKey) => void;
+  onMemoryDraftChange: (value: string) => void;
+  onSaveMemory: (section: ProductMemorySectionKey, body: string) => void;
   noteDraft: string;
   onNoteDraftChange: (value: string) => void;
   onSaveNote: () => void;
@@ -1019,6 +1099,7 @@ function RoomDetail({
   const ask = room.asks[0];
   const activeRun = runs.find((run) => run.status === "running");
   const decisionNote = noteDraft.trim() || undefined;
+  const activeMemorySection = productMemory?.sections.find((section) => section.key === selectedMemorySection);
 
   return (
     <div className="grid gap-4 p-4">
@@ -1186,6 +1267,45 @@ function RoomDetail({
           {room.artifacts.map((artifact, index) => (
             <ArtifactRow key={artifact.id} artifact={artifact} last={index === room.artifacts.length - 1} />
           ))}
+        </div>
+      </section>
+
+      <section>
+        <SectionTitle icon={<BookOpenText size={16} />} title="Product memory" />
+        <div className="grid gap-3 rounded-xl border border-stone-200 bg-white p-3">
+          {productMemory ? (
+            <>
+              <div className="flex flex-wrap gap-2">
+                {productMemory.sections.map((section) => (
+                  <Button
+                    variant={section.key === selectedMemorySection ? "default" : "outline"}
+                    size="sm"
+                    type="button"
+                    key={section.key}
+                    onClick={() => onSelectMemorySection(section.key)}
+                  >
+                    {section.title}
+                  </Button>
+                ))}
+              </div>
+              <Textarea
+                value={memoryDraft}
+                onChange={(event) => onMemoryDraftChange(event.target.value)}
+                rows={8}
+                placeholder="Add durable product context..."
+              />
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-xs text-stone-500">
+                  {activeMemorySection?.filename ?? selectedMemorySection}. Local Markdown memory for {productMemory.productName}.
+                </span>
+                <Button type="button" size="sm" onClick={() => onSaveMemory(selectedMemorySection, memoryDraft)}>
+                  Save memory
+                </Button>
+              </div>
+            </>
+          ) : (
+            <p className="text-sm text-stone-500">Product memory loads from the local daemon when available.</p>
+          )}
         </div>
       </section>
 

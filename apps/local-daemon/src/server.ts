@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import type { CheckScriptKey, DecisionAction, ElfRun } from "@elves-hq/core";
+import type { CheckScriptKey, DecisionAction, ElfRun, ProductMemorySectionKey } from "@elves-hq/core";
 import { RoomProcessManager } from "./process-manager";
 import { WorkspaceStore } from "./store";
 
@@ -70,6 +70,20 @@ const server = createServer(async (request, response) => {
       const body = await readJson(request);
       const result = store.createTaskRoom(readCreateRoomInput(body));
       sendJson(response, 200, { ...result, workspace: store.getWorkspace() });
+      return;
+    }
+
+    const productMemoryMatch = url.pathname.match(/^\/api\/products\/([^/]+)\/memory$/);
+    if (request.method === "GET" && productMemoryMatch) {
+      sendJson(response, 200, store.getProductMemory(productMemoryMatch[1]));
+      return;
+    }
+
+    const productMemorySectionMatch = url.pathname.match(/^\/api\/products\/([^/]+)\/memory\/([^/]+)$/);
+    if (request.method === "POST" && productMemorySectionMatch) {
+      const body = await readJson(request);
+      const sectionBody = readMemorySectionInput(body);
+      sendJson(response, 200, store.updateProductMemorySection(productMemorySectionMatch[1], readMemorySectionKey(productMemorySectionMatch[2]), sectionBody));
       return;
     }
 
@@ -247,6 +261,22 @@ function readCheckScriptKey(body: unknown): CheckScriptKey | undefined {
   }
 
   throw new Error("Unsupported check script key");
+}
+
+function readMemorySectionKey(value: string): ProductMemorySectionKey {
+  if (value === "PRODUCT" || value === "STRATEGY" || value === "ARCHITECTURE" || value === "DECISIONS" || value === "DO_NOT_DO" || value === "RECENT_LEARNINGS") {
+    return value;
+  }
+
+  throw new Error("Unsupported memory section");
+}
+
+function readMemorySectionInput(body: unknown): string {
+  if (!body || typeof body !== "object" || typeof (body as { body?: unknown }).body !== "string") {
+    throw new Error("Expected JSON body with string field: body");
+  }
+
+  return (body as { body: string }).body;
 }
 
 function readCreateRoomInput(body: unknown) {
