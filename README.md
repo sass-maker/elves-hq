@@ -29,6 +29,8 @@ Worktree-backed runs create isolated git worktrees under `runs/<run-id>/worktree
 
 Check gates run inside the captured worktree, choose a package script by key (`typecheck` in the UI today), and write output to `runs/<run-id>/check.log`.
 
+CodeVetter gates run against captured worktree diffs and write reports to `runs/<run-id>/codevetter.md`. Set `CODEVETTER_COMMAND` to use an external reviewer command; `{diff}`, `{worktree}`, and `{output}` placeholders are supported. Without it, the daemon uses a deterministic local fallback scan for high-confidence diff risks such as hardcoded secrets, shell execution, raw HTML injection, dynamic code execution, and newly introduced network calls.
+
 Rooms can be created directly in the cockpit. Each room creates a task, assigns the default builder elf, stores acceptance criteria, and can then launch dry-run, read-only Codex, worktree dry-run, or worktree Codex modes.
 
 The Needs Me queue is generated from room signals, not generic activity. It surfaces unresolved asks, blocked or failed runs, failed gates, and ready artifacts through the cockpit and `GET /api/needs-me`.
@@ -40,6 +42,11 @@ Founder actions are persisted with each room. Approve/reject close the room, req
 ```bash
 pnpm check
 ```
+
+## Local API Notes
+
+- `POST /api/runs/:id/codevetter` runs the CodeVetter gate for a completed worktree run.
+- `GET /api/runs/:id/codevetter` returns the captured Markdown report.
 
 ## Structure
 

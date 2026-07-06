@@ -15,6 +15,7 @@ import {
   Download,
   Inbox,
   ScrollText,
+  ShieldCheck,
   Sparkles,
   SquareTerminal,
   TestTube2
@@ -117,6 +118,7 @@ export function App() {
   const [roomRuns, setRoomRuns] = useState<Record<string, ElfRun[]>>({});
   const [diffPreview, setDiffPreview] = useState<Record<string, string>>({});
   const [checkPreview, setCheckPreview] = useState<Record<string, string>>({});
+  const [codevetterPreview, setCodevetterPreview] = useState<Record<string, string>>({});
   const [decisionItems, setDecisionItems] = useState<DecisionItem[]>(buildDecisionItems(seedWorkspace.rooms));
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
   const [newRoom, setNewRoom] = useState({
@@ -346,6 +348,24 @@ export function App() {
 
     const body = (await response.json()) as { output: string };
     setCheckPreview((current) => ({ ...current, [roomId]: body.output }));
+  };
+
+  const runLatestCodeVetter = async (roomId: string) => {
+    const run = roomRuns[roomId]?.find((item) => item.mode.includes("worktree") && item.status === "completed");
+    if (!run) {
+      setCodevetterPreview((current) => ({ ...current, [roomId]: "No completed worktree run is ready for CodeVetter yet." }));
+      return;
+    }
+
+    const response = await fetch(`${daemonBaseUrl}/api/runs/${run.id}/codevetter`, { method: "POST" });
+    if (!response.ok) {
+      const body = (await response.json().catch(() => ({ error: "CodeVetter gate failed to start." }))) as { error?: string };
+      setCodevetterPreview((current) => ({ ...current, [roomId]: body.error ?? "CodeVetter gate failed to start." }));
+      return;
+    }
+
+    const body = (await response.json()) as { output: string };
+    setCodevetterPreview((current) => ({ ...current, [roomId]: body.output }));
   };
 
   const performDecisionAction = async (roomId: string, action: DecisionAction, note?: string) => {
@@ -583,6 +603,7 @@ export function App() {
           runs={roomRuns[selectedRoom.id] ?? []}
           diffPreview={diffPreview[selectedRoom.id]}
           checkPreview={checkPreview[selectedRoom.id]}
+          codevetterPreview={codevetterPreview[selectedRoom.id]}
           noteDraft={roomNotes[selectedRoom.id] ?? ""}
           onNoteDraftChange={(value) => setRoomNotes((current) => ({ ...current, [selectedRoom.id]: value }))}
           onSaveNote={() => saveRoomNote(selectedRoom.id)}
@@ -591,6 +612,7 @@ export function App() {
           onStartMode={(mode) => startRoomRun(selectedRoom.id, mode)}
           onOpenDiff={() => openLatestDiff(selectedRoom.id)}
           onRunCheck={() => runLatestCheck(selectedRoom.id)}
+          onRunCodeVetter={() => runLatestCodeVetter(selectedRoom.id)}
           onKillRun={() => killLatestRun(selectedRoom.id)}
           onDecisionAction={(action) => performDecisionAction(selectedRoom.id, action)}
         />
@@ -778,6 +800,7 @@ function RoomDetail({
   runs,
   diffPreview,
   checkPreview,
+  codevetterPreview,
   noteDraft,
   onNoteDraftChange,
   onSaveNote,
@@ -786,6 +809,7 @@ function RoomDetail({
   onStartMode,
   onOpenDiff,
   onRunCheck,
+  onRunCodeVetter,
   onKillRun,
   onDecisionAction
 }: {
@@ -794,6 +818,7 @@ function RoomDetail({
   runs: ElfRun[];
   diffPreview?: string;
   checkPreview?: string;
+  codevetterPreview?: string;
   noteDraft: string;
   onNoteDraftChange: (value: string) => void;
   onSaveNote: () => void;
@@ -802,6 +827,7 @@ function RoomDetail({
   onStartMode: (mode: ElfRun["mode"]) => void;
   onOpenDiff: () => void;
   onRunCheck: () => void;
+  onRunCodeVetter: () => void;
   onKillRun: () => void;
   onDecisionAction: (action: DecisionAction) => void;
 }) {
@@ -871,6 +897,7 @@ function RoomDetail({
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onStartMode("codex-worktree")}><Hammer size={15} />Build</Button>
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onOpenDiff}><GitBranch size={15} />Diff</Button>
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onRunCheck}><TestTube2 size={15} />Check</Button>
+            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onRunCodeVetter}><ShieldCheck size={15} />Vet</Button>
             <Button className="min-w-0 px-2" variant="destructive" size="sm" type="button" onClick={onKillRun} disabled={!activeRun}><CircleStop size={15} />Kill</Button>
           </div>
           <div className="mt-3 grid grid-cols-2 gap-2 border-t border-stone-200 pt-3">
@@ -917,6 +944,15 @@ function RoomDetail({
           <SectionTitle icon={<TestTube2 size={16} />} title="Check output" />
           <pre className="max-h-72 overflow-auto rounded-lg bg-stone-950 p-3 text-xs leading-5 text-stone-100">
             <code>{checkPreview}</code>
+          </pre>
+        </section>
+      ) : null}
+
+      {codevetterPreview ? (
+        <section>
+          <SectionTitle icon={<ShieldCheck size={16} />} title="CodeVetter gate" />
+          <pre className="max-h-72 overflow-auto rounded-lg bg-stone-950 p-3 text-xs leading-5 text-stone-100">
+            <code>{codevetterPreview}</code>
           </pre>
         </section>
       ) : null}

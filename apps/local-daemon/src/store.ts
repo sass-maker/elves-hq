@@ -304,6 +304,11 @@ export class WorkspaceStore {
     return { id, ...artifact };
   }
 
+  markRoomStatus(roomId: string, status: Room["status"], summary: string): Room {
+    this.updateRoom(roomId, status, summary);
+    return this.getRoom(roomId);
+  }
+
   resolveDecision(roomId: string, input: ResolveDecisionInput): Room {
     const room = this.getRoom(roomId);
     const note = input.note?.trim();

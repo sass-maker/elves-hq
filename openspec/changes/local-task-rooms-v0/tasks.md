@@ -20,6 +20,7 @@
 - [x] Add signal-backed Needs Me decision queue.
 - [x] Add persisted founder decision actions.
 - [x] Add retry action from the latest room run mode.
+- [x] Add CodeVetter gate adapter for completed worktree runs.
 
 ## Verification
 
@@ -39,4 +40,6 @@
 - [x] `POST /api/rooms`
 - [x] `GET /api/needs-me`
 - [x] `POST /api/rooms/:id/decision`
+- [x] `POST /api/runs/:id/codevetter`
+- [x] Blocking CodeVetter finding marks the room failed and creates a Needs Me item.
 - [x] Browser smoke of local cockpit

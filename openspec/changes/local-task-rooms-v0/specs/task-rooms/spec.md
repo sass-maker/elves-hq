@@ -116,3 +116,20 @@ The V0 daemon MUST be able to start, log, persist, and stop room-scoped runs.
 - **THEN** the daemon can run a selected package script inside the isolated worktree
 - **AND** output is written to a local check log
 - **AND** a pass/fail test artifact is attached to the room
+
+### Requirement: CodeVetter review gate
+
+The V0 daemon MUST be able to run a CodeVetter gate against a completed worktree diff before founder approval.
+
+#### Scenario: Founder vets a completed worktree run
+
+- **WHEN** a completed worktree run has a captured diff
+- **THEN** the daemon can run a configured CodeVetter command or local deterministic fallback scan
+- **AND** output is written to a local CodeVetter report
+- **AND** a pass/fail review artifact is attached to the room
+
+#### Scenario: CodeVetter finds a blocking issue
+
+- **WHEN** the CodeVetter gate reports a high-severity or external blocking finding
+- **THEN** the room status changes to failed
+- **AND** the Needs Me queue surfaces the failed review gate for founder inspection

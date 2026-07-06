@@ -135,6 +135,55 @@ export class RoomProcessManager {
     };
   }
 
+  runCodeVetter(runId: string) {
+    const run = this.store.getRun(runId);
+    if (run.status === "running") {
+      throw new Error("Cannot run CodeVetter while the room run is still active");
+    }
+    if (!run.mode.includes("worktree")) {
+      throw new Error("CodeVetter requires a worktree-backed run");
+    }
+
+    const worktreePath = resolve(runsRoot, run.id, "worktree");
+    const diffPath = resolve(runsRoot, run.id, "diff.patch");
+    if (!existsSync(worktreePath)) {
+      throw new Error(`Missing worktree for run ${run.id}`);
+    }
+    if (!existsSync(diffPath)) {
+      throw new Error(`Missing diff for run ${run.id}`);
+    }
+
+    this.store.appendRoomLog(run.roomId, "info", "Running CodeVetter gate.");
+    const report = process.env.CODEVETTER_COMMAND
+      ? runConfiguredCodeVetter(process.env.CODEVETTER_COMMAND, { diffPath, worktreePath, runId })
+      : runLocalCodeVetterScan(readFileSync(diffPath, "utf8"), { diffPath, worktreePath, runId });
+
+    const outputPath = resolve(runsRoot, run.id, "codevetter.md");
+    mkdirSync(dirname(outputPath), { recursive: true });
+    writeFileSync(outputPath, report.markdown);
+
+    this.store.addArtifact(run.roomId, {
+      type: "review",
+      title: `CodeVetter gate for ${run.id}`,
+      summary: report.summary,
+      status: report.blocking ? "failed" : "passed"
+    });
+    if (report.blocking) {
+      this.store.markRoomStatus(run.roomId, "failed", `CodeVetter blocked run ${run.id}: ${report.summary}`);
+    }
+    this.store.appendRoomLog(run.roomId, report.blocking ? "error" : "success", `CodeVetter gate ${report.blocking ? "blocked" : "passed"}: ${report.summary}`);
+
+    return {
+      runId: run.id,
+      blocking: report.blocking,
+      findingCount: report.findingCount,
+      highCount: report.highCount,
+      mediumCount: report.mediumCount,
+      outputPath,
+      output: report.markdown
+    };
+  }
+
   private spawnRun(localPath: string, taskTitle: string, options: StartRunOptions, worktreePath?: string) {
     const cwd = resolve(projectRoot, localPath);
     const runCwd = worktreePath ?? cwd;
@@ -374,4 +423,165 @@ function detectCheckCommand(worktreePath: string, requestedScript: CheckScriptKe
     args: ["run", scriptKey],
     label: `npm run ${scriptKey}`
   };
+}
+
+interface CodeVetterReport {
+  blocking: boolean;
+  findingCount: number;
+  highCount: number;
+  mediumCount: number;
+  summary: string;
+  markdown: string;
+}
+
+interface CodeVetterContext {
+  diffPath: string;
+  worktreePath: string;
+  runId: string;
+}
+
+function runConfiguredCodeVetter(commandTemplate: string, context: CodeVetterContext): CodeVetterReport {
+  const outputPath = resolve(runsRoot, context.runId, "codevetter-external-output.txt");
+  const command = commandTemplate
+    .replaceAll("{diff}", shellQuote(context.diffPath))
+    .replaceAll("{worktree}", shellQuote(context.worktreePath))
+    .replaceAll("{output}", shellQuote(outputPath));
+  const finalCommand = command.includes(context.diffPath) ? command : `${command} ${shellQuote(context.diffPath)}`;
+  const result = spawnSync(finalCommand, {
+    cwd: context.worktreePath,
+    encoding: "utf8",
+    maxBuffer: 1024 * 1024 * 20,
+    shell: true
+  });
+  const combined = [result.stdout.trim(), result.stderr.trim() ? `\n[stderr]\n${result.stderr.trim()}` : ""].filter(Boolean).join("\n");
+  const externalOutput = existsSync(outputPath) ? readFileSync(outputPath, "utf8") : combined;
+  const blocking = result.status !== 0;
+  const markdown = [
+    "# CodeVetter Gate",
+    "",
+    `Run: ${context.runId}`,
+    "Adapter: external command",
+    `Command: ${finalCommand}`,
+    `Exit code: ${result.status ?? "unknown"}`,
+    "",
+    "## Result",
+    "",
+    blocking ? "Blocking: external CodeVetter command returned a non-zero exit code." : "Passed: external CodeVetter command exited successfully.",
+    "",
+    "## Output",
+    "",
+    "```text",
+    externalOutput || "No output.",
+    "```"
+  ].join("\n");
+
+  return {
+    blocking,
+    findingCount: blocking ? 1 : 0,
+    highCount: blocking ? 1 : 0,
+    mediumCount: 0,
+    summary: blocking ? "External CodeVetter command failed; review output before approval." : "External CodeVetter command passed.",
+    markdown
+  };
+}
+
+function runLocalCodeVetterScan(diff: string, context: CodeVetterContext): CodeVetterReport {
+  const findings = localDiffFindings(diff);
+  const highCount = findings.filter((finding) => finding.severity === "high").length;
+  const mediumCount = findings.filter((finding) => finding.severity === "medium").length;
+  const blocking = highCount > 0;
+  const summary =
+    findings.length === 0
+      ? "No high-confidence local diff risks found."
+      : `${findings.length} local diff risk${findings.length === 1 ? "" : "s"} found: ${highCount} high, ${mediumCount} medium.`;
+  const markdown = [
+    "# CodeVetter Gate",
+    "",
+    `Run: ${context.runId}`,
+    "Adapter: local deterministic fallback",
+    `Diff: ${context.diffPath}`,
+    `Worktree: ${context.worktreePath}`,
+    "",
+    "## Result",
+    "",
+    blocking ? "Blocking: high-severity findings require founder review or a fix." : "Passed: no high-severity findings were detected by the local fallback scan.",
+    "",
+    "## Findings",
+    "",
+    findings.length === 0
+      ? "No findings."
+      : findings
+          .map(
+            (finding, index) =>
+              `${index + 1}. **${finding.severity.toUpperCase()}** ${finding.title}\n   - Evidence: \`${finding.evidence}\`\n   - Why it matters: ${finding.detail}`
+          )
+          .join("\n\n"),
+    "",
+    "## Notes",
+    "",
+    "This fallback gate is not a substitute for the full CodeVetter desktop review engine. Set `CODEVETTER_COMMAND` to an external CodeVetter CLI command when one is available."
+  ].join("\n");
+
+  return {
+    blocking,
+    findingCount: findings.length,
+    highCount,
+    mediumCount,
+    summary,
+    markdown
+  };
+}
+
+function localDiffFindings(diff: string) {
+  const findings: Array<{ severity: "high" | "medium"; title: string; detail: string; evidence: string }> = [];
+  const rules: Array<{ severity: "high" | "medium"; title: string; detail: string; pattern: RegExp }> = [
+    {
+      severity: "high",
+      title: "Potential hardcoded secret",
+      detail: "New code appears to assign a credential-like value. Secrets should not be committed or exposed to elves unless explicitly allowed.",
+      pattern: /^\+.*(?:api[_-]?key|secret|token|password)\s*[:=]\s*['"][^'"]{8,}/i
+    },
+    {
+      severity: "high",
+      title: "Shell execution risk",
+      detail: "New code appears to run shell commands through a string shell. Review for command injection before approval.",
+      pattern: /^\+.*(?:shell\s*:\s*true|exec\s*\(|execSync\s*\()/i
+    },
+    {
+      severity: "high",
+      title: "Unsafe HTML injection",
+      detail: "New code writes raw HTML into the page. Review sanitization and source trust before approval.",
+      pattern: /^\+.*(?:dangerouslySetInnerHTML|innerHTML\s*=)/i
+    },
+    {
+      severity: "medium",
+      title: "Dynamic code execution",
+      detail: "New code appears to evaluate strings as code. Confirm the input is trusted and cannot be influenced by users.",
+      pattern: /^\+.*(?:eval\s*\(|new Function\s*\()/i
+    },
+    {
+      severity: "medium",
+      title: "Network request introduced",
+      detail: "New network calls may affect privacy, reliability, or costs. Confirm the endpoint and failure behavior are acceptable.",
+      pattern: /^\+.*(?:fetch\s*\(|axios\.|http\.request|https\.request)/i
+    }
+  ];
+
+  for (const line of diff.split(/\r?\n/)) {
+    if (!line.startsWith("+") || line.startsWith("+++")) {
+      continue;
+    }
+    for (const rule of rules) {
+      const evidence = line.slice(0, 180);
+      if (rule.pattern.test(line) && !findings.some((finding) => finding.title === rule.title && finding.evidence === evidence)) {
+        findings.push({ severity: rule.severity, title: rule.title, detail: rule.detail, evidence });
+      }
+    }
+  }
+
+  return findings;
+}
+
+function shellQuote(value: string) {
+  return `'${value.replaceAll("'", "'\\''")}'`;
 }

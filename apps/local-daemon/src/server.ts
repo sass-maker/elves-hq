@@ -149,6 +149,29 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    const codevetterMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/codevetter$/);
+    if (request.method === "POST" && codevetterMatch) {
+      sendJson(response, 200, processManager.runCodeVetter(codevetterMatch[1]));
+      return;
+    }
+
+    if (request.method === "GET" && codevetterMatch) {
+      const runId = codevetterMatch[1];
+      if (!/^run-[a-z0-9-]+$/i.test(runId)) {
+        sendJson(response, 400, { error: "Invalid run id" });
+        return;
+      }
+
+      const outputPath = fileURLToPath(new URL(`${runId}/codevetter.md`, `file://${runsRoot.endsWith("/") ? runsRoot : `${runsRoot}/`}`));
+      if (!existsSync(outputPath)) {
+        sendJson(response, 404, { error: "No CodeVetter report captured for this run" });
+        return;
+      }
+
+      sendJson(response, 200, { runId, output: readFileSync(outputPath, "utf8") });
+      return;
+    }
+
     const noteMatch = url.pathname.match(/^\/api\/rooms\/([^/]+)\/notes$/);
     if (request.method === "POST" && noteMatch) {
       const body = await readJson(request);
