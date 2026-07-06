@@ -4,8 +4,10 @@ import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import {
   buildDecisionItems,
+  buildDailyBrief,
   seedWorkspace,
   type Artifact,
+  type DailyBrief,
   type Decision,
   type DecisionAction,
   type DecisionItem,
@@ -146,6 +148,10 @@ export class WorkspaceStore {
 
   getDecisionItems(): DecisionItem[] {
     return buildDecisionItems(this.getWorkspace().rooms);
+  }
+
+  getDailyBrief(): DailyBrief {
+    return buildDailyBrief(this.getWorkspace());
   }
 
   getRoom(roomId: string): Room {

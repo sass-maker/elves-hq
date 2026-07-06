@@ -75,6 +75,43 @@ export interface DecisionItem {
   actions: string[];
 }
 
+export type DailyBriefSection = "shipped" | "ready" | "blocked" | "failed" | "active";
+
+export interface DailyBriefItem {
+  id: string;
+  roomId: string;
+  productId: string;
+  productName: string;
+  title: string;
+  summary: string;
+  status: RoomStatus;
+  evidence: string[];
+}
+
+export interface DailyBriefRecommendation {
+  id: string;
+  roomId: string;
+  productId: string;
+  productName: string;
+  title: string;
+  recommendation: string;
+  risk: Decision["risk"];
+}
+
+export interface DailyBrief {
+  generatedAt: string;
+  totals: {
+    rooms: number;
+    decisions: number;
+    ready: number;
+    blocked: number;
+    failed: number;
+    active: number;
+  };
+  sections: Record<DailyBriefSection, DailyBriefItem[]>;
+  recommendedNext: DailyBriefRecommendation[];
+}
+
 export interface Room {
   id: string;
   productId: string;
@@ -190,6 +227,84 @@ export function buildDecisionItems(rooms: Room[]): DecisionItem[] {
       return items;
     })
     .sort((a, b) => a.urgency - b.urgency || decisionRiskRank[b.risk] - decisionRiskRank[a.risk]);
+}
+
+export function buildDailyBrief(workspace: WorkspaceSeed, generatedAt = new Date().toISOString()): DailyBrief {
+  const productsById = new Map(workspace.products.map((product) => [product.id, product]));
+  const sections: DailyBrief["sections"] = {
+    shipped: [],
+    ready: [],
+    blocked: [],
+    failed: [],
+    active: []
+  };
+
+  for (const room of workspace.rooms) {
+    const product = productsById.get(room.productId);
+    const item = briefItem(room, product?.name ?? "Unknown project");
+    const readyArtifacts = room.artifacts.filter((artifact) => artifact.status === "ready" || artifact.status === "passed");
+    const failedArtifacts = room.artifacts.filter((artifact) => artifact.status === "failed");
+    const approved = room.decisions.some((decision) => decision.status === "approved");
+
+    if (room.status === "done" && approved) {
+      sections.shipped.push(item);
+    } else if (room.status === "failed" || failedArtifacts.length > 0) {
+      sections.failed.push(item);
+    } else if (room.status === "blocked" || room.status === "asking" || room.asks.length > 0) {
+      sections.blocked.push(item);
+    } else if (room.status === "ready" || readyArtifacts.length > 0) {
+      sections.ready.push(item);
+    } else if (room.status === "working") {
+      sections.active.push(item);
+    }
+  }
+
+  const decisionItems = buildDecisionItems(workspace.rooms);
+  const recommendedNext = decisionItems.slice(0, 5).map((item) => {
+    const product = productsById.get(item.productId);
+    return {
+      id: `brief-rec-${item.id}`,
+      roomId: item.roomId,
+      productId: item.productId,
+      productName: product?.name ?? "Unknown project",
+      title: item.title,
+      recommendation: item.recommendation,
+      risk: item.risk
+    };
+  });
+
+  return {
+    generatedAt,
+    totals: {
+      rooms: workspace.rooms.length,
+      decisions: decisionItems.length,
+      ready: sections.ready.length,
+      blocked: sections.blocked.length,
+      failed: sections.failed.length,
+      active: sections.active.length
+    },
+    sections,
+    recommendedNext
+  };
+}
+
+function briefItem(room: Room, productName: string): DailyBriefItem {
+  const artifactEvidence = room.artifacts.slice(-3).map((artifact) => `${artifact.title}: ${artifact.summary}`);
+  const askEvidence = room.asks.slice(0, 1).map((ask) => `Ask: ${ask.question}`);
+  const decisionEvidence = room.decisions.slice(-2).map((decision) => `Decision: ${decision.status} - ${decision.title}`);
+  const logEvidence = room.logs.slice(-2).map((log) => `${log.level}: ${log.message}`);
+  const evidence = [...artifactEvidence, ...askEvidence, ...decisionEvidence, ...logEvidence].slice(0, 4);
+
+  return {
+    id: `brief-${room.id}`,
+    roomId: room.id,
+    productId: room.productId,
+    productName,
+    title: room.title,
+    summary: room.summary,
+    status: room.status,
+    evidence: evidence.length > 0 ? evidence : [room.summary]
+  };
 }
 
 export const seedWorkspace: WorkspaceSeed = {

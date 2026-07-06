@@ -8,7 +8,7 @@ Elves HQ is a local-first founder cockpit for running Codex elves across a produ
 
 **Users:** Sarthak first: an AI-native founder/operator managing many local fleet repos with Codex and adjacent coding agents.
 
-**IN scope for V0:** local product registry, project-wise task list, task rooms, elf assignment/status, room asks, logs, artifacts, captured run prompts, decision actions, fix-request retry context, check gates, CodeVetter review gate adapter, generated worktree cleanup controls, resizable room UI, tasteful elf workbench animation, local-only operation.
+**IN scope for V0:** local product registry, project-wise task list, task rooms, elf assignment/status, room asks, logs, artifacts, captured run prompts, decision actions, fix-request retry context, local daily brief, check gates, CodeVetter review gate adapter, generated worktree cleanup controls, resizable room UI, tasteful elf workbench animation, local-only operation.
 
 **OUT of scope for V0:** cloud hosting, auth, public API, widgets, billing, production deploys, Telegram, metrics integrations, marketing automation, feedback ingestion, multi-user workspaces, and generic multi-agent adapters.
 
@@ -33,7 +33,7 @@ Elves HQ is a local-first founder cockpit for running Codex elves across a produ
 - 2026-07-06 - Project created as a fresh local-first replacement direction for SaaS Maker's original operating-cockpit ambition.
 - 2026-07-06 - V0 OpenSpec change `local-task-rooms-v0` started.
 - 2026-07-06 - Local daemon and root SQLite store added for persisted workspace/room data and room notes.
-- 2026-07-07 - Task-room creation, isolated worktree runs, diff capture, captured prompts, fix-request retry context, check gates, CodeVetter gate adapter, generated worktree cleanup, a signal-backed Needs Me queue, and founder decision actions landed in the local cockpit.
+- 2026-07-07 - Task-room creation, isolated worktree runs, diff capture, captured prompts, fix-request retry context, local Daily Brief, check gates, CodeVetter gate adapter, generated worktree cleanup, a signal-backed Needs Me queue, and founder decision actions landed in the local cockpit.
 
 ## Products
 
@@ -44,7 +44,7 @@ Elves HQ is a local-first founder cockpit for running Codex elves across a produ
 ## Features (shipped)
 
 - Initial V0 local cockpit scaffold with seeded project/task-room data.
-- Local daemon exposes `GET /api/health`, `GET /api/workspace`, `GET /api/needs-me`, `POST /api/rooms`, `POST /api/rooms/:id/notes`, `POST /api/rooms/:id/decision`, `GET /api/rooms/:id/runs`, `POST /api/rooms/:id/runs/start`, `GET /api/runs/:id/prompt`, and `POST /api/runs/:id/kill`.
+- Local daemon exposes `GET /api/health`, `GET /api/workspace`, `GET /api/needs-me`, `GET /api/briefs/daily`, `POST /api/rooms`, `POST /api/rooms/:id/notes`, `POST /api/rooms/:id/decision`, `GET /api/rooms/:id/runs`, `POST /api/rooms/:id/runs/start`, `GET /api/runs/:id/prompt`, and `POST /api/runs/:id/kill`.
 - SQLite persistence stores projects, elves, tasks, rooms, logs, asks, artifacts, decisions, and notes in ignored local `data/elves.db`.
 - Room runs support local dry runs and read-only Codex inspection, stream stdout/stderr into room logs, persist run records, support kill, and enforce a default runtime cap.
 - Room-aware run prompts are captured to `runs/<run-id>/prompt.md` and include acceptance criteria, founder notes, prior decisions, artifacts, and recent logs.
@@ -57,6 +57,7 @@ Elves HQ is a local-first founder cockpit for running Codex elves across a produ
 - Project-wise room creation is available from the cockpit and via `POST /api/rooms`.
 - Fleet registry import from `../saas-maker/foundry.projects.json` is wired through the daemon and UI.
 - Needs Me queue aggregates founder decisions from room asks, blocked/failed runs, failed gates, and ready artifacts via `GET /api/needs-me`.
+- Daily Brief summarizes shipped, ready, blocked, failed, active, and recommended next actions from existing room signals via `GET /api/briefs/daily`.
 - Founder decision actions approve, request fix, reject, snooze, and retry rooms with persisted decision records and queue updates.
 
 ## Todo / Planned / Deferred / Blocked

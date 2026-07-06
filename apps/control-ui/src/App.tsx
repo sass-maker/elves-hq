@@ -1,6 +1,7 @@
 import {
   Activity,
   ArrowRight,
+  CalendarDays,
   CheckCircle2,
   CircleStop,
   ClipboardCheck,
@@ -22,10 +23,14 @@ import {
   Trash2
 } from "lucide-react";
 import {
+  buildDailyBrief,
   buildDecisionItems,
   seedWorkspace,
   statusLabels,
   type Artifact,
+  type DailyBrief,
+  type DailyBriefItem,
+  type DailyBriefSection,
   type DecisionAction,
   type DecisionItem,
   type ElfRun,
@@ -123,6 +128,7 @@ export function App() {
   const [codevetterPreview, setCodevetterPreview] = useState<Record<string, string>>({});
   const [cleanupPreview, setCleanupPreview] = useState<Record<string, string>>({});
   const [decisionItems, setDecisionItems] = useState<DecisionItem[]>(buildDecisionItems(seedWorkspace.rooms));
+  const [dailyBrief, setDailyBrief] = useState<DailyBrief>(buildDailyBrief(seedWorkspace));
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
   const [newRoom, setNewRoom] = useState({
     productId: seedWorkspace.products[0]?.id ?? "",
@@ -133,17 +139,18 @@ export function App() {
   useEffect(() => {
     let cancelled = false;
 
-    Promise.all([fetch(`${daemonBaseUrl}/api/workspace`), fetch(`${daemonBaseUrl}/api/needs-me`)])
-      .then(async ([workspaceResponse, needsResponse]) => {
-        if (!workspaceResponse.ok || !needsResponse.ok) {
-          throw new Error(`Daemon returned ${workspaceResponse.status}/${needsResponse.status}`);
+    Promise.all([fetch(`${daemonBaseUrl}/api/workspace`), fetch(`${daemonBaseUrl}/api/needs-me`), fetch(`${daemonBaseUrl}/api/briefs/daily`)])
+      .then(async ([workspaceResponse, needsResponse, briefResponse]) => {
+        if (!workspaceResponse.ok || !needsResponse.ok || !briefResponse.ok) {
+          throw new Error(`Daemon returned ${workspaceResponse.status}/${needsResponse.status}/${briefResponse.status}`);
         }
-        return (await Promise.all([workspaceResponse.json(), needsResponse.json()])) as [WorkspaceSeed, { items: DecisionItem[] }];
+        return (await Promise.all([workspaceResponse.json(), needsResponse.json(), briefResponse.json()])) as [WorkspaceSeed, { items: DecisionItem[] }, DailyBrief];
       })
-      .then(([nextWorkspace, needsBody]) => {
+      .then(([nextWorkspace, needsBody, nextBrief]) => {
         if (!cancelled) {
           setWorkspace(nextWorkspace);
           setDecisionItems(needsBody.items);
+          setDailyBrief(nextBrief);
           setDaemonState("local");
         }
       })
@@ -151,6 +158,7 @@ export function App() {
         if (!cancelled) {
           setWorkspace(seedWorkspace);
           setDecisionItems(buildDecisionItems(seedWorkspace.rooms));
+          setDailyBrief(buildDailyBrief(seedWorkspace));
           setDaemonState("fallback");
         }
       });
@@ -169,25 +177,28 @@ export function App() {
 
     const refresh = async () => {
       try {
-        const [workspaceResponse, runsResponse, needsResponse] = await Promise.all([
+        const [workspaceResponse, runsResponse, needsResponse, briefResponse] = await Promise.all([
           fetch(`${daemonBaseUrl}/api/workspace`),
           fetch(`${daemonBaseUrl}/api/rooms/${selectedRoomId}/runs`),
-          fetch(`${daemonBaseUrl}/api/needs-me`)
+          fetch(`${daemonBaseUrl}/api/needs-me`),
+          fetch(`${daemonBaseUrl}/api/briefs/daily`)
         ]);
 
-        if (!workspaceResponse.ok || !runsResponse.ok || !needsResponse.ok) {
+        if (!workspaceResponse.ok || !runsResponse.ok || !needsResponse.ok || !briefResponse.ok) {
           return;
         }
 
-        const [nextWorkspace, runsBody, needsBody] = (await Promise.all([workspaceResponse.json(), runsResponse.json(), needsResponse.json()])) as [
+        const [nextWorkspace, runsBody, needsBody, nextBrief] = (await Promise.all([workspaceResponse.json(), runsResponse.json(), needsResponse.json(), briefResponse.json()])) as [
           WorkspaceSeed,
           { runs: ElfRun[] },
-          { items: DecisionItem[] }
+          { items: DecisionItem[] },
+          DailyBrief
         ];
 
         if (!cancelled) {
           setWorkspace(nextWorkspace);
           setDecisionItems(needsBody.items);
+          setDailyBrief(nextBrief);
           setRoomRuns((current) => ({ ...current, [selectedRoomId]: runsBody.runs }));
         }
       } catch {
@@ -261,6 +272,7 @@ export function App() {
         ...current,
         rooms: current.rooms.map((room) => (room.id === roomId ? body.room : room))
       }));
+      setDailyBrief((current) => buildDailyBrief({ ...workspace, rooms: workspace.rooms.map((room) => (room.id === roomId ? body.room : room)) }, current.generatedAt));
       setRoomNotes((current) => ({ ...current, [roomId]: "" }));
     } catch {
       setWorkspace((current) => ({
@@ -426,6 +438,7 @@ export function App() {
     const body = (await response.json()) as { room: Room; run?: ElfRun; workspace: WorkspaceSeed; needs: DecisionItem[] };
     setWorkspace(body.workspace);
     setDecisionItems(body.needs);
+    setDailyBrief(buildDailyBrief(body.workspace));
     setSelectedRoomId(body.room.id);
     setSelectedProductId(body.room.productId);
     if (note?.trim()) {
@@ -446,6 +459,7 @@ export function App() {
     const body = (await response.json()) as { workspace: WorkspaceSeed };
     setWorkspace(body.workspace);
     setDecisionItems(buildDecisionItems(body.workspace.rooms));
+    setDailyBrief(buildDailyBrief(body.workspace));
     setDaemonState("local");
     setNewRoom((current) => ({ ...current, productId: body.workspace.products[0]?.id ?? current.productId }));
   };
@@ -478,6 +492,7 @@ export function App() {
     const body = (await response.json()) as { room: Room; workspace: WorkspaceSeed };
     setWorkspace(body.workspace);
     setDecisionItems(buildDecisionItems(body.workspace.rooms));
+    setDailyBrief(buildDailyBrief(body.workspace));
     setSelectedProductId(body.room.productId);
     setSelectedRoomId(body.room.id);
     setNewRoom((current) => ({ ...current, title: "", acceptanceCriteria: "" }));
@@ -575,6 +590,16 @@ export function App() {
             setIsCreatingRoom(false);
           }}
           onAction={(item, action) => performDecisionAction(item.roomId, action)}
+        />
+
+        <DailyBriefPanel
+          brief={dailyBrief}
+          selectedProductId={selectedProductId}
+          onOpenRoom={(item) => {
+            setSelectedProductId(item.productId);
+            setSelectedRoomId(item.roomId);
+            setIsCreatingRoom(false);
+          }}
         />
 
         {isCreatingRoom ? (
@@ -749,6 +774,106 @@ function NeedsMePanel({
       ) : (
         <p className="rounded-lg bg-stone-50 px-3 py-2 text-sm text-stone-500">No room currently has an ask, failed run, blocker, or ready review.</p>
       )}
+    </section>
+  );
+}
+
+const briefSectionLabels: Record<DailyBriefSection, string> = {
+  shipped: "Shipped",
+  ready: "Ready",
+  blocked: "Blocked",
+  failed: "Failed",
+  active: "Active"
+};
+
+function DailyBriefPanel({
+  brief,
+  selectedProductId,
+  onOpenRoom
+}: {
+  brief: DailyBrief;
+  selectedProductId: string;
+  onOpenRoom: (item: DailyBriefItem) => void;
+}) {
+  const sections: DailyBriefSection[] = ["shipped", "ready", "blocked", "failed", "active"];
+  const visibleSections = sections.map((section) => ({
+    section,
+    items: brief.sections[section].filter((item) => selectedProductId === "all" || item.productId === selectedProductId)
+  }));
+  const visibleRecommendations = brief.recommendedNext.filter((item) => selectedProductId === "all" || item.productId === selectedProductId);
+  const itemCount = visibleSections.reduce((sum, section) => sum + section.items.length, 0);
+
+  return (
+    <section className="mb-4 rounded-xl border border-stone-200 bg-white p-3 shadow-sm" aria-label="Daily Brief">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <CalendarDays size={17} />
+          <div>
+            <p className="text-[11px] font-extrabold uppercase text-stone-500">Daily Brief</p>
+            <h3 className="text-base font-bold tracking-normal">{itemCount} artifact-backed update{itemCount === 1 ? "" : "s"}</h3>
+          </div>
+        </div>
+        <Badge variant={visibleRecommendations.length > 0 ? "blue" : "secondary"}>
+          {visibleRecommendations.length > 0 ? `${visibleRecommendations.length} next` : "No asks"}
+        </Badge>
+      </div>
+
+      <div className="grid gap-2">
+        {visibleRecommendations.length > 0 ? (
+          <div className="rounded-lg border border-blue-100 bg-blue-50 p-2">
+            <p className="mb-1 text-[11px] font-extrabold uppercase text-blue-900">Recommended next</p>
+            <div className="grid gap-1">
+              {visibleRecommendations.slice(0, 3).map((item) => (
+                <button
+                  className="grid gap-1 rounded-md bg-white/80 px-2 py-1.5 text-left text-xs text-blue-950 hover:bg-white"
+                  type="button"
+                  key={item.id}
+                  onClick={() =>
+                    onOpenRoom({
+                      id: item.id,
+                      roomId: item.roomId,
+                      productId: item.productId,
+                      productName: item.productName,
+                      title: item.title,
+                      summary: item.recommendation,
+                      status: "asking",
+                      evidence: [item.recommendation]
+                    })
+                  }
+                >
+                  <span className="font-bold">{item.productName}: {item.title}</span>
+                  <span className="line-clamp-2 text-blue-800">{item.recommendation}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-2">
+          {visibleSections.map(({ section, items }) => (
+            <div className="rounded-lg border border-stone-200 bg-stone-50 p-2" key={section}>
+              <div className="mb-1 flex items-center justify-between gap-2">
+                <p className="text-[11px] font-extrabold uppercase text-stone-500">{briefSectionLabels[section]}</p>
+                <Badge variant={items.length > 0 ? statusTone[items[0].status] : "secondary"}>{items.length}</Badge>
+              </div>
+              <div className="grid gap-1">
+                {items.slice(0, 2).map((item) => (
+                  <button
+                    className="rounded-md bg-white px-2 py-1.5 text-left text-xs hover:bg-stone-100"
+                    type="button"
+                    key={item.id}
+                    onClick={() => onOpenRoom(item)}
+                  >
+                    <span className="block truncate font-bold">{item.productName}</span>
+                    <span className="line-clamp-2 leading-4 text-stone-600">{item.title}</span>
+                  </button>
+                ))}
+                {items.length === 0 ? <p className="px-1 py-1 text-xs text-stone-400">None</p> : null}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
     </section>
   );
 }
