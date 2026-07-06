@@ -33,7 +33,7 @@ Elves HQ is a local-first founder cockpit for running Codex elves across a produ
 - 2026-07-06 - Project created as a fresh local-first replacement direction for SaaS Maker's original operating-cockpit ambition.
 - 2026-07-06 - V0 OpenSpec change `local-task-rooms-v0` started.
 - 2026-07-06 - Local daemon and root SQLite store added for persisted workspace/room data and room notes.
-- 2026-07-07 - Task-room creation, isolated worktree runs, diff capture, captured prompts, editable local product memory, built-in playbooks, structured elf asks, fix-request retry context, local Daily Brief, check gates, CodeVetter gate adapter, generated worktree cleanup, a signal-backed Needs Me queue, founder decision actions, and blocking-gate approval guards landed in the local cockpit.
+- 2026-07-07 - Task-room creation, isolated worktree runs, diff capture, captured prompts, editable local product memory, built-in playbooks, structured elf asks, room transcripts, fix-request retry context, local Daily Brief, check gates, CodeVetter gate adapter, generated worktree cleanup, a signal-backed Needs Me queue, founder decision actions, and blocking-gate approval guards landed in the local cockpit.
 
 ## Products
 
@@ -44,11 +44,12 @@ Elves HQ is a local-first founder cockpit for running Codex elves across a produ
 ## Features (shipped)
 
 - Initial V0 local cockpit scaffold with seeded project/task-room data.
-- Local daemon exposes `GET /api/health`, `GET /api/workspace`, `GET /api/needs-me`, `GET /api/briefs/daily`, `GET /api/products/:id/memory`, `POST /api/products/:id/memory/:section`, `POST /api/rooms`, `POST /api/rooms/:id/notes`, `POST /api/rooms/:id/decision`, `GET /api/rooms/:id/runs`, `POST /api/rooms/:id/runs/start`, `GET /api/runs/:id/prompt`, and `POST /api/runs/:id/kill`.
+- Local daemon exposes `GET /api/health`, `GET /api/workspace`, `GET /api/needs-me`, `GET /api/briefs/daily`, `GET /api/products/:id/memory`, `POST /api/products/:id/memory/:section`, `POST /api/rooms`, `POST /api/rooms/:id/notes`, `POST /api/rooms/:id/decision`, `GET /api/rooms/:id/runs`, `POST /api/rooms/:id/runs/start`, `POST /api/rooms/:id/transcript`, `GET /api/rooms/:id/transcript`, `GET /api/runs/:id/prompt`, and `POST /api/runs/:id/kill`.
 - SQLite persistence stores projects, elves, tasks, rooms, logs, asks, artifacts, decisions, and notes in ignored local `data/elves.db`.
 - Room runs support local dry runs and read-only Codex inspection, stream stdout/stderr into room logs, persist run records, support kill, and enforce a default runtime cap.
 - Room-aware run prompts are captured to `runs/<run-id>/prompt.md` and include acceptance criteria, founder notes, prior decisions, artifacts, and recent logs.
 - Room runs can open founder asks by emitting `ELF_ASK: {"question":"...","options":["..."],"recommendation":"..."}`; valid asks set the room to `asking` and surface in Needs Me.
+- Room transcripts generate local Markdown under `runs/room-transcripts/<room-id>.md`, include task/room evidence, attach as room artifacts, and can be previewed from the cockpit.
 - Product memory is stored as ignored local Markdown under `memory/<product-slug>/`, editable in the room cockpit, and injected into generated run prompts.
 - Built-in playbooks provide reusable workflows for small features, bugs, failing tests, diff review, safe refactors, and daily briefs; selected playbooks are persisted on rooms and injected into prompts.
 - Request-fix and retry actions can carry the room draft note, so founder fix context is persisted and injected into the next run prompt.

@@ -73,6 +73,17 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    const roomTranscriptMatch = url.pathname.match(/^\/api\/rooms\/([^/]+)\/transcript$/);
+    if (request.method === "POST" && roomTranscriptMatch) {
+      sendJson(response, 200, store.generateRoomTranscript(roomTranscriptMatch[1]));
+      return;
+    }
+
+    if (request.method === "GET" && roomTranscriptMatch) {
+      sendJson(response, 200, store.getRoomTranscript(roomTranscriptMatch[1]));
+      return;
+    }
+
     const productMemoryMatch = url.pathname.match(/^\/api\/products\/([^/]+)\/memory$/);
     if (request.method === "GET" && productMemoryMatch) {
       sendJson(response, 200, store.getProductMemory(productMemoryMatch[1]));

@@ -135,6 +135,7 @@ export function App() {
   const [checkPreview, setCheckPreview] = useState<Record<string, string>>({});
   const [codevetterPreview, setCodevetterPreview] = useState<Record<string, string>>({});
   const [cleanupPreview, setCleanupPreview] = useState<Record<string, string>>({});
+  const [transcriptPreview, setTranscriptPreview] = useState<Record<string, string>>({});
   const [decisionItems, setDecisionItems] = useState<DecisionItem[]>(buildDecisionItems(seedWorkspace.rooms));
   const [dailyBrief, setDailyBrief] = useState<DailyBrief>(buildDailyBrief(seedWorkspace));
   const [productMemoryById, setProductMemoryById] = useState<Record<string, ProductMemory>>({});
@@ -469,6 +470,19 @@ export function App() {
     }));
   };
 
+  const generateRoomTranscript = async (roomId: string) => {
+    const response = await fetch(`${daemonBaseUrl}/api/rooms/${roomId}/transcript`, { method: "POST" });
+    if (!response.ok) {
+      const body = (await response.json().catch(() => ({ error: "Room transcript failed." }))) as { error?: string };
+      setTranscriptPreview((current) => ({ ...current, [roomId]: body.error ?? "Room transcript failed." }));
+      return;
+    }
+
+    const body = (await response.json()) as { transcript: string; outputPath: string; room: Room };
+    replaceRoom(body.room);
+    setTranscriptPreview((current) => ({ ...current, [roomId]: body.transcript || `Transcript generated at ${body.outputPath}.` }));
+  };
+
   const performDecisionAction = async (roomId: string, action: DecisionAction, note?: string) => {
     const response = await fetch(`${daemonBaseUrl}/api/rooms/${roomId}/decision`, {
       method: "POST",
@@ -760,6 +774,7 @@ export function App() {
           checkPreview={checkPreview[selectedRoom.id]}
           codevetterPreview={codevetterPreview[selectedRoom.id]}
           cleanupPreview={cleanupPreview[selectedRoom.id]}
+          transcriptPreview={transcriptPreview[selectedRoom.id]}
           productMemory={selectedProductMemory}
           selectedMemorySection={selectedMemorySection}
           memoryDraft={selectedMemorySectionBody}
@@ -777,6 +792,7 @@ export function App() {
           onRunCheck={() => runLatestCheck(selectedRoom.id)}
           onRunCodeVetter={() => runLatestCodeVetter(selectedRoom.id)}
           onCleanupWorktree={() => cleanupLatestWorktree(selectedRoom.id)}
+          onGenerateTranscript={() => generateRoomTranscript(selectedRoom.id)}
           onKillRun={() => killLatestRun(selectedRoom.id)}
           onDecisionAction={(action, note) => performDecisionAction(selectedRoom.id, action, note)}
         />
@@ -1067,6 +1083,7 @@ function RoomDetail({
   checkPreview,
   codevetterPreview,
   cleanupPreview,
+  transcriptPreview,
   productMemory,
   selectedMemorySection,
   memoryDraft,
@@ -1084,6 +1101,7 @@ function RoomDetail({
   onRunCheck,
   onRunCodeVetter,
   onCleanupWorktree,
+  onGenerateTranscript,
   onKillRun,
   onDecisionAction
 }: {
@@ -1095,6 +1113,7 @@ function RoomDetail({
   checkPreview?: string;
   codevetterPreview?: string;
   cleanupPreview?: string;
+  transcriptPreview?: string;
   productMemory?: ProductMemory;
   selectedMemorySection: ProductMemorySectionKey;
   memoryDraft: string;
@@ -1112,6 +1131,7 @@ function RoomDetail({
   onRunCheck: () => void;
   onRunCodeVetter: () => void;
   onCleanupWorktree: () => void;
+  onGenerateTranscript: () => void;
   onKillRun: () => void;
   onDecisionAction: (action: DecisionAction, note?: string) => void;
 }) {
@@ -1183,6 +1203,7 @@ function RoomDetail({
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onStartMode("worktree-dry-run")}><GitBranch size={15} />Draft</Button>
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onStartMode("codex-worktree")}><Hammer size={15} />Build</Button>
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onOpenPrompt}><ScrollText size={15} />Prompt</Button>
+            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onGenerateTranscript}><FileText size={15} />Doc</Button>
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onOpenDiff}><GitBranch size={15} />Diff</Button>
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onRunCheck}><TestTube2 size={15} />Check</Button>
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onRunCodeVetter}><ShieldCheck size={15} />Vet</Button>
@@ -1254,6 +1275,15 @@ function RoomDetail({
           <SectionTitle icon={<ScrollText size={16} />} title="Run prompt" />
           <pre className="max-h-72 overflow-auto rounded-lg bg-stone-950 p-3 text-xs leading-5 text-stone-100">
             <code>{promptPreview}</code>
+          </pre>
+        </section>
+      ) : null}
+
+      {transcriptPreview ? (
+        <section>
+          <SectionTitle icon={<FileText size={16} />} title="Room transcript" />
+          <pre className="max-h-96 overflow-auto rounded-lg bg-stone-950 p-3 text-xs leading-5 text-stone-100">
+            <code>{transcriptPreview}</code>
           </pre>
         </section>
       ) : null}

@@ -31,6 +31,7 @@ import {
 const databasePath = fileURLToPath(new URL("../../../data/elves.db", import.meta.url));
 const fleetRegistryPath = fileURLToPath(new URL("../../../../saas-maker/foundry.projects.json", import.meta.url));
 const memoryRoot = fileURLToPath(new URL("../../../memory/", import.meta.url));
+const transcriptsRoot = fileURLToPath(new URL("../../../runs/room-transcripts/", import.meta.url));
 
 interface RegistryProject {
   desc?: string;
@@ -166,6 +167,43 @@ export class WorkspaceStore {
 
   getDailyBrief(): DailyBrief {
     return buildDailyBrief(this.getWorkspace());
+  }
+
+  generateRoomTranscript(roomId: string): { roomId: string; outputPath: string; transcript: string; room: Room } {
+    const room = this.getRoom(roomId);
+    const transcript = this.renderRoomTranscript(room);
+    const outputPath = roomTranscriptPath(room.id);
+    mkdirSync(dirname(outputPath), { recursive: true });
+    writeFileSync(outputPath, transcript);
+    this.db.prepare("DELETE FROM artifacts WHERE room_id = ? AND type = ? AND title = ?").run(room.id, "log", `Room transcript for ${room.id}`);
+    this.addArtifact(room.id, {
+      type: "log",
+      title: `Room transcript for ${room.id}`,
+      summary: `Generated Markdown transcript at ${outputPath}`,
+      status: "ready"
+    });
+    this.appendRoomLog(room.id, "success", `Generated room transcript at ${outputPath}.`);
+
+    return {
+      roomId: room.id,
+      outputPath,
+      transcript,
+      room: this.getRoom(room.id)
+    };
+  }
+
+  getRoomTranscript(roomId: string): { roomId: string; outputPath: string; transcript: string } {
+    this.getRoom(roomId);
+    const outputPath = roomTranscriptPath(roomId);
+    if (!existsSync(outputPath)) {
+      throw new Error("No transcript has been generated for this room yet.");
+    }
+
+    return {
+      roomId,
+      outputPath,
+      transcript: readFileSync(outputPath, "utf8")
+    };
   }
 
   getProductMemory(productId: string): ProductMemory {
@@ -482,6 +520,66 @@ export class WorkspaceStore {
     return this.hydrateRoom(updated);
   }
 
+  private renderRoomTranscript(room: Room): string {
+    const product = this.getProduct(room.productId);
+    const task = this.getTask(room.taskId);
+    const elf = this.db.prepare("SELECT * FROM elves WHERE id = ?").get(room.assignedElfId) as unknown as Elf | undefined;
+    const playbook = this.getPlaybook(room.playbookId);
+    const runs = this.listRuns(room.id);
+
+    return [
+      `# ${room.title}`,
+      "",
+      `Generated: ${new Date().toISOString()}`,
+      `Room: ${room.id}`,
+      "",
+      "## Product",
+      `- Name: ${product.name}`,
+      `- Local path: ${product.localPath}`,
+      `- Status: ${product.status}`,
+      `- Priority: ${product.priority}`,
+      `- Current goal: ${product.currentGoal}`,
+      "",
+      "## Task",
+      `- ID: ${task.id}`,
+      `- Priority: ${task.priority}`,
+      "",
+      "### Acceptance Criteria",
+      markdownList(task.acceptanceCriteria),
+      "",
+      "## Room State",
+      `- Status: ${room.status}`,
+      `- Summary: ${room.summary}`,
+      `- Started: ${room.startedAt}`,
+      `- Last activity: ${room.lastActivityAt}`,
+      `- Assigned elf: ${elf ? `${elf.name} (${elf.role})` : room.assignedElfId}`,
+      `- Playbook: ${playbook ? playbook.name : "none"}`,
+      "",
+      "## Open Asks",
+      room.asks.length > 0
+        ? room.asks
+            .map((ask) => [`### ${ask.question}`, `- Created: ${ask.createdAt}`, `- Options: ${ask.options.join(" / ")}`, `- Recommendation: ${ask.recommendation}`].join("\n"))
+            .join("\n\n")
+        : "No open asks.",
+      "",
+      "## Founder Notes",
+      markdownList(room.notes),
+      "",
+      "## Decisions",
+      room.decisions.length > 0 ? room.decisions.map((decision) => `- ${decision.status} (${decision.risk}): ${decision.title}`).join("\n") : "No decisions recorded.",
+      "",
+      "## Artifacts",
+      room.artifacts.length > 0 ? room.artifacts.map((artifact) => `- ${artifact.status} ${artifact.type}: ${artifact.title} - ${artifact.summary}`).join("\n") : "No artifacts recorded.",
+      "",
+      "## Runs",
+      runs.length > 0 ? runs.map((run) => `- ${run.status} ${run.mode} ${run.id} exit=${run.exitCode ?? "n/a"} started=${run.startedAt} ended=${run.endedAt ?? "n/a"} command=${run.command}`).join("\n") : "No runs recorded.",
+      "",
+      "## Logs",
+      room.logs.length > 0 ? room.logs.map((log) => `- ${log.time} ${log.level}: ${log.message}`).join("\n") : "No logs recorded.",
+      ""
+    ].join("\n");
+  }
+
   private hydrateRoom(row: RoomRow): Room {
     const logs = this.db.prepare("SELECT id, time, level, message FROM room_logs WHERE room_id = ? ORDER BY id").all(row.id) as unknown as RoomLog[];
     const asks = (this.db.prepare("SELECT * FROM room_asks WHERE room_id = ? ORDER BY created_at").all(row.id) as unknown as AskRow[]).map(
@@ -790,6 +888,14 @@ function mergeProducts(primary: Product[], fallback: Product[]): Product[] {
     productsById.set(product.id, product);
   }
   return [...productsById.values()];
+}
+
+function roomTranscriptPath(roomId: string) {
+  return resolve(transcriptsRoot, `${safePathSegment(roomId)}.md`);
+}
+
+function markdownList(items: string[]) {
+  return items.length > 0 ? items.map((item) => `- ${item}`).join("\n") : "- None recorded.";
 }
 
 function loadFleetRegistryProducts(): Product[] {
