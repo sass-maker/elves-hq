@@ -39,6 +39,8 @@ Every room run captures its prompt at `runs/<run-id>/prompt.md`. Generated promp
 
 Product memory is stored as local Markdown under `memory/<product-slug>/` and ignored by git. The room cockpit can edit `PRODUCT.md`, `STRATEGY.md`, `ARCHITECTURE.md`, `DECISIONS.md`, `DO_NOT_DO.md`, and `RECENT_LEARNINGS.md`; generated run prompts include those sections.
 
+Built-in playbooks are available when creating a room. V0 includes Ship Small Feature, Fix Bug, Fix Failing Test, Review Diff, Refactor Safely, and Daily Brief. The selected playbook is shown in the room and injected into generated prompts with steps, tools, gates, escalation rules, and completion criteria.
+
 The Needs Me queue is generated from room signals, not generic activity. It surfaces unresolved asks, blocked or failed runs, failed gates, and ready artifacts through the cockpit and `GET /api/needs-me`.
 
 The Daily Brief is generated from stored room signals and groups work into shipped, ready, blocked, failed, active, and recommended next actions. It is visible in the cockpit and available at `GET /api/briefs/daily`.
@@ -57,6 +59,7 @@ pnpm check
 - `GET /api/briefs/daily` returns the current local Daily Brief.
 - `GET /api/products/:id/memory` returns local Product Memory Markdown sections.
 - `POST /api/products/:id/memory/:section` saves a Product Memory section.
+- `GET /api/workspace` includes built-in playbooks and each room's selected `playbookId`.
 - `POST /api/runs/:id/codevetter` runs the CodeVetter gate for a completed worktree run.
 - `GET /api/runs/:id/codevetter` returns the captured Markdown report.
 - `POST /api/runs/:id/cleanup-worktree` removes the generated worktree for an inactive worktree run.

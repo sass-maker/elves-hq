@@ -284,7 +284,7 @@ function readCreateRoomInput(body: unknown) {
     throw new Error("Expected JSON body");
   }
 
-  const record = body as { productId?: unknown; title?: unknown; acceptanceCriteria?: unknown; assignedElfId?: unknown };
+  const record = body as { productId?: unknown; title?: unknown; acceptanceCriteria?: unknown; assignedElfId?: unknown; playbookId?: unknown };
   if (typeof record.productId !== "string") {
     throw new Error("productId is required");
   }
@@ -296,7 +296,8 @@ function readCreateRoomInput(body: unknown) {
     productId: record.productId,
     title: record.title,
     acceptanceCriteria: Array.isArray(record.acceptanceCriteria) ? record.acceptanceCriteria.filter((item): item is string => typeof item === "string") : [],
-    assignedElfId: typeof record.assignedElfId === "string" ? record.assignedElfId : undefined
+    assignedElfId: typeof record.assignedElfId === "string" ? record.assignedElfId : undefined,
+    playbookId: typeof record.playbookId === "string" ? record.playbookId : undefined
   };
 }
 

@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import type { CheckScriptKey, ElfRun, Product, ProductMemory, Room, Task } from "@elves-hq/core";
+import type { CheckScriptKey, ElfRun, Playbook, Product, ProductMemory, Room, Task } from "@elves-hq/core";
 import { WorkspaceStore } from "./store";
 
 const projectRoot = fileURLToPath(new URL("../../../", import.meta.url));
@@ -35,8 +35,9 @@ export class RoomProcessManager {
     const product = this.store.getProduct(room.productId);
     const task = this.store.getTask(room.taskId);
     const memory = this.store.getProductMemory(product.id);
+    const playbook = this.store.getPlaybook(room.playbookId);
     const command = this.buildCommandDescription(product.localPath, task.title, options);
-    const prompt = options.prompt?.trim() || buildRoomRunPrompt(room, product, task, memory, options.mode);
+    const prompt = options.prompt?.trim() || buildRoomRunPrompt(room, product, task, memory, playbook, options.mode);
     const runOptions = { ...options, prompt };
     const run = this.store.createRun(room.id, options.mode, command);
     this.captureRunPrompt(run, prompt);
@@ -450,12 +451,39 @@ export class RoomProcessManager {
   }
 }
 
-function buildRoomRunPrompt(room: Room, product: Product, task: Task, memory: ProductMemory, mode: ElfRun["mode"]) {
+function buildRoomRunPrompt(room: Room, product: Product, task: Task, memory: ProductMemory, playbook: Playbook | undefined, mode: ElfRun["mode"]) {
   const acceptance = task.acceptanceCriteria.length > 0 ? task.acceptanceCriteria.map((item) => `- ${item}`).join("\n") : "- No acceptance criteria recorded.";
   const memoryText = memory.sections
     .filter((section) => section.body.trim().length > 0)
     .map((section) => [`### ${section.title}`, section.body.trim()].join("\n"))
     .join("\n\n");
+  const playbookText = playbook
+    ? [
+        `Name: ${playbook.name}`,
+        `Purpose: ${playbook.description}`,
+        "",
+        "Inputs:",
+        playbook.inputs.map((item) => `- ${item}`).join("\n"),
+        "",
+        "Required Context:",
+        playbook.requiredContext.map((item) => `- ${item}`).join("\n"),
+        "",
+        "Steps:",
+        playbook.steps.map((item, index) => `${index + 1}. ${item}`).join("\n"),
+        "",
+        "Allowed Tools:",
+        playbook.allowedTools.map((item) => `- ${item}`).join("\n"),
+        "",
+        "Required Gates:",
+        playbook.requiredGates.map((item) => `- ${item}`).join("\n"),
+        "",
+        "Escalation Rules:",
+        playbook.escalationRules.map((item) => `- ${item}`).join("\n"),
+        "",
+        "Completion Criteria:",
+        playbook.completionCriteria.map((item) => `- ${item}`).join("\n")
+      ].join("\n")
+    : "No playbook selected.";
   const notes = room.notes.length > 0 ? room.notes.slice(-8).map((note) => `- ${note}`).join("\n") : "- No founder notes recorded.";
   const decisions = room.decisions.length > 0 ? room.decisions.slice(-6).map((decision) => `- ${decision.status}: ${decision.title} (${decision.risk})`).join("\n") : "- No decisions recorded.";
   const artifacts = room.artifacts.length > 0 ? room.artifacts.slice(-8).map((artifact) => `- ${artifact.status}: ${artifact.title} - ${artifact.summary}`).join("\n") : "- No artifacts recorded yet.";
@@ -484,6 +512,9 @@ function buildRoomRunPrompt(room: Room, product: Product, task: Task, memory: Pr
     "",
     "## Product Memory",
     memoryText || "No product memory recorded.",
+    "",
+    "## Playbook",
+    playbookText,
     "",
     "## Founder Notes And Fix Requests",
     notes,

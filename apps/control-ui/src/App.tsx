@@ -35,6 +35,7 @@ import {
   type DecisionAction,
   type DecisionItem,
   type ElfRun,
+  type Playbook,
   type Product,
   type ProductMemory,
   type ProductMemorySectionKey,
@@ -118,6 +119,10 @@ function roomTask(workspace: WorkspaceSeed, room: Room) {
   return task;
 }
 
+function roomPlaybook(workspace: WorkspaceSeed, room: Room): Playbook | undefined {
+  return room.playbookId ? workspace.playbooks.find((item) => item.id === room.playbookId) : undefined;
+}
+
 export function App() {
   const [workspace, setWorkspace] = useState<WorkspaceSeed>(seedWorkspace);
   const [daemonState, setDaemonState] = useState<"connecting" | "local" | "fallback">("connecting");
@@ -138,6 +143,7 @@ export function App() {
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
   const [newRoom, setNewRoom] = useState({
     productId: seedWorkspace.products[0]?.id ?? "",
+    playbookId: seedWorkspace.playbooks[0]?.id ?? "",
     title: "",
     acceptanceCriteria: ""
   });
@@ -517,6 +523,7 @@ export function App() {
       },
       body: JSON.stringify({
         productId: newRoom.productId,
+        playbookId: newRoom.playbookId,
         title,
         acceptanceCriteria: newRoom.acceptanceCriteria
           .split(/\r?\n/)
@@ -693,6 +700,20 @@ export function App() {
                   onChange={(event) => setNewRoom((current) => ({ ...current, title: event.target.value }))}
                   placeholder="Fix flaky onboarding test"
                 />
+              </label>
+              <label className="grid gap-1 text-sm font-semibold">
+                Playbook
+                <select
+                  className="h-10 rounded-md border border-stone-200 bg-white px-3 text-sm"
+                  value={newRoom.playbookId}
+                  onChange={(event) => setNewRoom((current) => ({ ...current, playbookId: event.target.value }))}
+                >
+                  {workspace.playbooks.map((playbook) => (
+                    <option key={playbook.id} value={playbook.id}>
+                      {playbook.name}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label className="grid gap-1 text-sm font-semibold">
                 Acceptance criteria
@@ -1096,6 +1117,7 @@ function RoomDetail({
   const product = roomProduct(workspace, room);
   const elf = roomElf(workspace, room);
   const task = roomTask(workspace, room);
+  const playbook = roomPlaybook(workspace, room);
   const ask = room.asks[0];
   const activeRun = runs.find((run) => run.status === "running");
   const decisionNote = noteDraft.trim() || undefined;
@@ -1175,6 +1197,36 @@ function RoomDetail({
           </div>
         </div>
       </section>
+
+      {playbook ? (
+        <section className="rounded-xl border border-stone-200 bg-white p-4">
+          <SectionTitle icon={<BookOpenText size={16} />} title="Playbook" />
+          <div className="grid gap-3">
+            <div>
+              <Badge variant="blue">{playbook.name}</Badge>
+              <p className="mt-2 text-sm leading-6 text-stone-600">{playbook.description}</p>
+            </div>
+            <div className="grid grid-cols-2 gap-3 text-sm max-lg:grid-cols-1">
+              <div>
+                <p className="mb-1 text-xs font-extrabold uppercase text-stone-500">Steps</p>
+                <ol className="grid list-decimal gap-1 pl-4 text-stone-600">
+                  {playbook.steps.slice(0, 4).map((step) => (
+                    <li key={step}>{step}</li>
+                  ))}
+                </ol>
+              </div>
+              <div>
+                <p className="mb-1 text-xs font-extrabold uppercase text-stone-500">Gates</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {playbook.requiredGates.map((gate) => (
+                    <Badge variant="outline" key={gate}>{gate}</Badge>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       {runs.length > 0 ? (
         <section>

@@ -29,6 +29,19 @@ export interface Task {
   priority: "high" | "medium" | "low";
 }
 
+export interface Playbook {
+  id: string;
+  name: string;
+  description: string;
+  inputs: string[];
+  requiredContext: string[];
+  steps: string[];
+  allowedTools: string[];
+  requiredGates: string[];
+  escalationRules: string[];
+  completionCriteria: string[];
+}
+
 export interface RoomAsk {
   id: string;
   question: string;
@@ -137,6 +150,7 @@ export interface Room {
   productId: string;
   taskId: string;
   assignedElfId: string;
+  playbookId?: string | null;
   title: string;
   status: RoomStatus;
   startedAt: string;
@@ -165,6 +179,7 @@ export type CheckScriptKey = "check" | "typecheck" | "test" | "build";
 export interface WorkspaceSeed {
   products: Product[];
   elves: Elf[];
+  playbooks: Playbook[];
   tasks: Task[];
   rooms: Room[];
   runs?: ElfRun[];
@@ -187,6 +202,81 @@ export const productMemorySectionDefinitions: ProductMemorySectionDefinition[] =
   { key: "DECISIONS", title: "Decisions", filename: "DECISIONS.md" },
   { key: "DO_NOT_DO", title: "Do Not Do", filename: "DO_NOT_DO.md" },
   { key: "RECENT_LEARNINGS", title: "Recent Learnings", filename: "RECENT_LEARNINGS.md" }
+];
+
+export const builtInPlaybooks: Playbook[] = [
+  {
+    id: "playbook-ship-small-feature",
+    name: "Ship Small Feature",
+    description: "Use for a scoped feature that should end with a reviewable diff.",
+    inputs: ["Room task", "Acceptance criteria", "Product memory"],
+    requiredContext: ["Relevant architecture notes", "Do-not-do constraints", "Existing tests or check command"],
+    steps: ["Inspect the current implementation path.", "Make the smallest coherent change.", "Update related docs or copy only when behavior changes.", "Run the narrowest relevant check.", "Summarize changed files and residual risk."],
+    allowedTools: ["read_repo", "write_branch", "run_tests", "run_codevetter"],
+    requiredGates: ["diff_captured", "check_passed_or_explained", "codevetter_passed_or_reviewed", "founder_approved"],
+    escalationRules: ["Ask the founder before expanding scope.", "Stop if production deploy, secrets, spend, or user messaging is required."],
+    completionCriteria: ["Acceptance criteria are addressed.", "Diff and check output are attached.", "Founder can approve or request a fix."]
+  },
+  {
+    id: "playbook-fix-bug",
+    name: "Fix Bug",
+    description: "Use for a known defect with a focused reproduction or failing behavior.",
+    inputs: ["Bug description", "Expected behavior", "Observed behavior"],
+    requiredContext: ["Relevant logs", "Nearest tests", "Recent decisions"],
+    steps: ["Reproduce or locate the failing path.", "Identify the smallest likely cause.", "Patch the cause without broad refactors.", "Run the narrowest test or check.", "Report evidence for the fix."],
+    allowedTools: ["read_repo", "write_branch", "run_tests", "run_codevetter"],
+    requiredGates: ["reproduction_or_reason", "diff_captured", "check_passed_or_explained", "founder_approved"],
+    escalationRules: ["Ask for clarification if expected behavior is ambiguous.", "Stop if fixing requires a migration or production config change."],
+    completionCriteria: ["Bug cause is named.", "Fix is scoped.", "Verification result is captured."]
+  },
+  {
+    id: "playbook-fix-failing-test",
+    name: "Fix Failing Test",
+    description: "Use when a test or check is failing and the goal is to restore signal.",
+    inputs: ["Failing command", "Failure output", "Recent changes"],
+    requiredContext: ["Test file", "Implementation under test", "Known flaky behavior"],
+    steps: ["Read the failing output.", "Inspect the test and implementation together.", "Fix product code unless the test is clearly stale.", "Run the target test or closest check.", "Summarize whether the test now proves the intended behavior."],
+    allowedTools: ["read_repo", "write_branch", "run_tests"],
+    requiredGates: ["target_check_ran", "diff_captured", "founder_approved"],
+    escalationRules: ["Ask before deleting assertions.", "Escalate if failure depends on missing credentials or external services."],
+    completionCriteria: ["The failing check passes or the blocker is explicit.", "Any test changes are justified."]
+  },
+  {
+    id: "playbook-review-diff",
+    name: "Review Diff",
+    description: "Use to inspect an existing elf-generated diff before approval.",
+    inputs: ["Captured diff", "Acceptance criteria", "Gate outputs"],
+    requiredContext: ["Changed files", "Test output", "CodeVetter report"],
+    steps: ["Read the diff by risk area.", "Compare changes to acceptance criteria.", "Check tests and CodeVetter findings.", "List approval blockers and fix requests.", "Recommend approve or request fix."],
+    allowedTools: ["read_repo", "run_tests", "run_codevetter"],
+    requiredGates: ["diff_reviewed", "tests_reviewed", "codevetter_reviewed", "founder_decision"],
+    escalationRules: ["Escalate high-risk findings.", "Do not approve production, spend, secrets, or user-facing irreversible actions."],
+    completionCriteria: ["Founder has a clear approve/request-fix decision."]
+  },
+  {
+    id: "playbook-refactor-safely",
+    name: "Refactor Safely",
+    description: "Use for internal cleanup where behavior should not change.",
+    inputs: ["Refactor target", "Non-goals", "Verification command"],
+    requiredContext: ["Current architecture notes", "Relevant tests", "Known risky paths"],
+    steps: ["Define the smallest refactor boundary.", "Preserve public behavior.", "Make mechanical changes in small batches.", "Run checks after the change.", "Call out any behavior drift."],
+    allowedTools: ["read_repo", "write_branch", "run_tests", "run_codevetter"],
+    requiredGates: ["diff_captured", "check_passed_or_explained", "behavior_drift_reviewed", "founder_approved"],
+    escalationRules: ["Ask before changing public APIs.", "Stop if refactor requires dependency or schema changes."],
+    completionCriteria: ["Behavior is preserved.", "Complexity or duplication is reduced.", "Verification is captured."]
+  },
+  {
+    id: "playbook-daily-brief",
+    name: "Daily Brief",
+    description: "Use to summarize real product progress from artifacts and decisions.",
+    inputs: ["Rooms", "Artifacts", "Decisions", "Runs"],
+    requiredContext: ["Needs Me queue", "Ready reviews", "Failed or blocked rooms"],
+    steps: ["Group shipped, ready, blocked, failed, and active work.", "Use artifacts as evidence.", "Separate activity from verified progress.", "Recommend the next founder actions."],
+    allowedTools: ["read_repo"],
+    requiredGates: ["artifact_backed_summary", "recommendations_named"],
+    escalationRules: ["Do not invent metrics or outcomes.", "Flag missing evidence instead of implying progress."],
+    completionCriteria: ["Founder can decide what to inspect next."]
+  }
 ];
 
 const decisionRiskRank: Record<DecisionItem["risk"], number> = {
@@ -386,6 +476,7 @@ export const seedWorkspace: WorkspaceSeed = {
       status: "ready"
     }
   ],
+  playbooks: builtInPlaybooks,
   tasks: [
     {
       id: "task-cv-import",

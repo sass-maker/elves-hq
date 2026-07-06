@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import {
   buildDecisionItems,
   buildDailyBrief,
+  builtInPlaybooks,
   productMemorySectionDefinitions,
   seedWorkspace,
   type Artifact,
@@ -14,6 +15,7 @@ import {
   type DecisionItem,
   type Elf,
   type ElfRun,
+  type Playbook,
   type Product,
   type ProductMemory,
   type ProductMemorySection,
@@ -42,6 +44,7 @@ interface RoomRow {
   product_id: string;
   task_id: string;
   assigned_elf_id: string;
+  playbook_id: string | null;
   title: string;
   status: Room["status"];
   started_at: string;
@@ -114,6 +117,7 @@ export interface CreateRoomInput {
   title: string;
   acceptanceCriteria: string[];
   assignedElfId?: string;
+  playbookId?: string;
 }
 
 export interface ResolveDecisionInput {
@@ -148,7 +152,11 @@ export class WorkspaceStore {
 
     const rooms = roomRows.map((row) => this.hydrateRoom(row));
 
-    return { products, elves, tasks, rooms };
+    return { products, elves, playbooks: builtInPlaybooks, tasks, rooms };
+  }
+
+  getPlaybook(playbookId: string | null | undefined): Playbook | undefined {
+    return playbookId ? builtInPlaybooks.find((playbook) => playbook.id === playbookId) : undefined;
   }
 
   getDecisionItems(): DecisionItem[] {
@@ -236,6 +244,7 @@ export class WorkspaceStore {
 
     const product = this.getProduct(input.productId);
     const assignedElfId = input.assignedElfId ?? this.defaultBuilderElfId();
+    const playbookId = input.playbookId && this.getPlaybook(input.playbookId) ? input.playbookId : null;
     const elf = this.db.prepare("SELECT * FROM elves WHERE id = ?").get(assignedElfId) as unknown as Elf | undefined;
     if (!elf) {
       throw new Error(`Elf not found: ${assignedElfId}`);
@@ -265,9 +274,9 @@ export class WorkspaceStore {
         .run(task.id, task.productId, task.title, JSON.stringify(task.acceptanceCriteria), task.priority);
       this.db
         .prepare(
-          "INSERT INTO rooms (id, product_id, task_id, assigned_elf_id, title, status, started_at, last_activity_at, summary) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+          "INSERT INTO rooms (id, product_id, task_id, assigned_elf_id, playbook_id, title, status, started_at, last_activity_at, summary) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
-        .run(roomId, product.id, task.id, assignedElfId, title, "idle", startedAt, startedAt, `Room created for ${product.name}. Assign an elf run when ready.`);
+        .run(roomId, product.id, task.id, assignedElfId, playbookId, title, "idle", startedAt, startedAt, `Room created for ${product.name}. Assign an elf run when ready.`);
       this.db
         .prepare("INSERT INTO room_notes (room_id, body, created_at) VALUES (?, ?, ?)")
         .run(roomId, `Created manually in Elves HQ for ${product.name}.`, new Date().toISOString());
@@ -461,6 +470,7 @@ export class WorkspaceStore {
       productId: row.product_id,
       taskId: row.task_id,
       assignedElfId: row.assigned_elf_id,
+      playbookId: row.playbook_id,
       title: row.title,
       status: row.status,
       startedAt: row.started_at,
@@ -506,6 +516,7 @@ export class WorkspaceStore {
         product_id TEXT NOT NULL,
         task_id TEXT NOT NULL,
         assigned_elf_id TEXT NOT NULL,
+        playbook_id TEXT,
         title TEXT NOT NULL,
         status TEXT NOT NULL,
         started_at TEXT NOT NULL,
@@ -565,6 +576,14 @@ export class WorkspaceStore {
         exit_code INTEGER
       );
     `);
+    this.migrateSchema();
+  }
+
+  private migrateSchema() {
+    const roomColumns = this.db.prepare("PRAGMA table_info(rooms)").all() as Array<{ name: string }>;
+    if (!roomColumns.some((column) => column.name === "playbook_id")) {
+      this.db.exec("ALTER TABLE rooms ADD COLUMN playbook_id TEXT;");
+    }
   }
 
   private updateRoom(roomId: string, status: Room["status"], summary: string) {
@@ -591,7 +610,7 @@ export class WorkspaceStore {
     const insertElf = this.db.prepare("INSERT INTO elves (id, name, role, status) VALUES (?, ?, ?, ?)");
     const insertTask = this.db.prepare("INSERT INTO tasks (id, productId, title, acceptanceCriteria, priority) VALUES (?, ?, ?, ?, ?)");
     const insertRoom = this.db.prepare(
-      "INSERT INTO rooms (id, product_id, task_id, assigned_elf_id, title, status, started_at, last_activity_at, summary) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      "INSERT INTO rooms (id, product_id, task_id, assigned_elf_id, playbook_id, title, status, started_at, last_activity_at, summary) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     );
     const insertLog = this.db.prepare("INSERT INTO room_logs (id, room_id, time, level, message) VALUES (?, ?, ?, ?, ?)");
     const insertAsk = this.db.prepare(
@@ -614,7 +633,7 @@ export class WorkspaceStore {
         insertTask.run(task.id, task.productId, task.title, JSON.stringify(task.acceptanceCriteria), task.priority);
       }
       for (const room of seedWorkspace.rooms) {
-        insertRoom.run(room.id, room.productId, room.taskId, room.assignedElfId, room.title, room.status, room.startedAt, room.lastActivityAt, room.summary);
+        insertRoom.run(room.id, room.productId, room.taskId, room.assignedElfId, room.playbookId ?? null, room.title, room.status, room.startedAt, room.lastActivityAt, room.summary);
         for (const log of room.logs) {
           insertLog.run(log.id, room.id, log.time, log.level, log.message);
         }
