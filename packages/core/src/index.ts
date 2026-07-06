@@ -307,6 +307,25 @@ export function getBlockingArtifacts(room: Pick<Room, "artifacts">): Artifact[] 
   });
 }
 
+export function getApprovalBlockers(room: Pick<Room, "artifacts">): string[] {
+  const blockers = getBlockingArtifacts(room).map((artifact) => `Blocking gate failed: ${artifact.title}`);
+  const hasDiff = room.artifacts.some((artifact) => artifact.type === "diff");
+  if (!hasDiff) {
+    return blockers;
+  }
+
+  const hasPassedCheck = room.artifacts.some((artifact) => artifact.type === "test" && artifact.status === "passed");
+  const hasPassedReview = room.artifacts.some((artifact) => artifact.type === "review" && artifact.status === "passed");
+  if (!hasPassedCheck) {
+    blockers.push("Run a passing check gate before approving this diff.");
+  }
+  if (!hasPassedReview) {
+    blockers.push("Run a passing CodeVetter review gate before approving this diff.");
+  }
+
+  return blockers;
+}
+
 export function buildDecisionItems(rooms: Room[]): DecisionItem[] {
   return rooms
     .flatMap((room) => {

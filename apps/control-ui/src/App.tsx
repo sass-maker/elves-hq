@@ -140,6 +140,7 @@ export function App() {
   const [codevetterPreview, setCodevetterPreview] = useState<Record<string, string>>({});
   const [cleanupPreview, setCleanupPreview] = useState<Record<string, string>>({});
   const [transcriptPreview, setTranscriptPreview] = useState<Record<string, string>>({});
+  const [decisionPreview, setDecisionPreview] = useState<Record<string, string>>({});
   const [decisionItems, setDecisionItems] = useState<DecisionItem[]>(buildDecisionItems(seedWorkspace.rooms));
   const [dailyBrief, setDailyBrief] = useState<DailyBrief>(buildDailyBrief(seedWorkspace));
   const [productMemoryById, setProductMemoryById] = useState<Record<string, ProductMemory>>({});
@@ -508,10 +509,13 @@ export function App() {
     });
 
     if (!response.ok) {
+      const body = (await response.json().catch(() => ({ error: "Decision action failed." }))) as { error?: string };
+      setDecisionPreview((current) => ({ ...current, [roomId]: body.error ?? "Decision action failed." }));
       return;
     }
 
     const body = (await response.json()) as { room: Room; run?: ElfRun; workspace: WorkspaceSeed; needs: DecisionItem[] };
+    setDecisionPreview((current) => ({ ...current, [roomId]: `${decisionActionLabels[action]} recorded.` }));
     setWorkspace(body.workspace);
     setDecisionItems(body.needs);
     setDailyBrief(buildDailyBrief(body.workspace));
@@ -809,6 +813,7 @@ export function App() {
           codevetterPreview={codevetterPreview[selectedRoom.id]}
           cleanupPreview={cleanupPreview[selectedRoom.id]}
           transcriptPreview={transcriptPreview[selectedRoom.id]}
+          decisionPreview={decisionPreview[selectedRoom.id]}
           productMemory={selectedProductMemory}
           selectedMemorySection={selectedMemorySection}
           memoryDraft={selectedMemorySectionBody}
@@ -1118,6 +1123,7 @@ function RoomDetail({
   codevetterPreview,
   cleanupPreview,
   transcriptPreview,
+  decisionPreview,
   productMemory,
   selectedMemorySection,
   memoryDraft,
@@ -1148,6 +1154,7 @@ function RoomDetail({
   codevetterPreview?: string;
   cleanupPreview?: string;
   transcriptPreview?: string;
+  decisionPreview?: string;
   productMemory?: ProductMemory;
   selectedMemorySection: ProductMemorySectionKey;
   memoryDraft: string;
@@ -1251,6 +1258,11 @@ function RoomDetail({
             <Button className="min-w-0 px-2" variant="destructive" size="sm" type="button" onClick={() => onDecisionAction("reject", decisionNote)}>Reject</Button>
             <Button className="col-span-2 min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onDecisionAction("retry", decisionNote)}>Retry latest run</Button>
           </div>
+          {decisionPreview ? (
+            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm leading-5 text-amber-950">
+              {decisionPreview}
+            </div>
+          ) : null}
         </div>
       </section>
 
