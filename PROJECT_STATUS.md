@@ -33,7 +33,7 @@ Elves HQ is a local-first founder cockpit for running Codex elves across a produ
 - 2026-07-06 - Project created as a fresh local-first replacement direction for SaaS Maker's original operating-cockpit ambition.
 - 2026-07-06 - V0 OpenSpec change `local-task-rooms-v0` started.
 - 2026-07-06 - Local daemon and root SQLite store added for persisted workspace/room data and room notes.
-- 2026-07-07 - Task-room creation, explicit elf assignment, isolated worktree runs, interrupted-run recovery, diff capture, captured prompts, editable local product memory, built-in playbooks, structured elf asks, room transcripts, fix-request retry context, local Daily Brief, check gates, CodeVetter gate adapter, generated worktree cleanup, visible room gate checklist, a signal-backed Needs Me queue, founder decision actions, and approval guards for failed or missing gates landed in the local cockpit.
+- 2026-07-07 - Task-room creation, explicit elf assignment, isolated worktree runs, interrupted-run recovery, diff capture, captured prompts, editable local product memory, built-in playbooks, structured elf asks, room transcripts, fix-request retry context, local Daily Brief, check gates, CodeVetter gate adapter, generated worktree cleanup, visible room gate checklist, persistent pane layout controls, a signal-backed Needs Me queue, founder decision actions, and approval guards for failed or missing gates landed in the local cockpit.
 
 ## Products
 
@@ -60,6 +60,7 @@ Elves HQ is a local-first founder cockpit for running Codex elves across a produ
 - CodeVetter gate runs against captured worktree diffs, writes reports to `runs/<run-id>/codevetter.md`, attaches review artifacts, and marks rooms failed when blocking findings are detected.
 - Room action panels show a visible gate checklist so founders can see whether Check and CodeVetter are waiting, required, passed, or failed before approving a diff.
 - Founder approval is blocked while the room has an unresolved current failed test or review gate, or while a diff artifact is missing a passed check gate or passed CodeVetter review gate.
+- The cockpit has local pane layout controls for the fleet sidebar and task-room list, persists the chosen widths in browser storage, and supports reset to the default command-room layout.
 - Worktree cleanup removes generated `runs/<run-id>/worktree` checkouts on demand, deletes daemon-created `elves/<room>/<run>` branches when Git considers them safely merged, and preserves captured diff, check, and review artifacts.
 - Project-wise room creation is available from the cockpit and via `POST /api/rooms`, including explicit assigned elf selection.
 - Fleet registry import from `../saas-maker/foundry.projects.json` is wired through the daemon and UI.

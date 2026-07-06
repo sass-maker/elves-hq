@@ -18,6 +18,7 @@ import {
   Inbox,
   ScrollText,
   ShieldCheck,
+  SlidersHorizontal,
   Sparkles,
   SquareTerminal,
   TestTube2,
@@ -74,6 +75,17 @@ const statusDot: Record<RoomStatus, string> = {
 };
 
 const daemonBaseUrl = import.meta.env.VITE_DAEMON_URL ?? "http://127.0.0.1:4327";
+const paneLayoutStorageKey = "elves-hq:pane-layout:v1";
+
+type PaneLayout = {
+  fleet: number;
+  rooms: number;
+};
+
+const defaultPaneLayout: PaneLayout = {
+  fleet: 260,
+  rooms: 560
+};
 
 const decisionActionLabels: Record<DecisionAction, string> = {
   approve: "Approve",
@@ -147,6 +159,7 @@ export function App() {
   const [selectedMemorySection, setSelectedMemorySection] = useState<ProductMemorySectionKey>("PRODUCT");
   const [memoryDrafts, setMemoryDrafts] = useState<Record<string, string>>({});
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
+  const [paneLayout, setPaneLayout] = useState<PaneLayout>(readStoredPaneLayout);
   const [newRoom, setNewRoom] = useState({
     productId: seedWorkspace.products[0]?.id ?? "",
     assignedElfId: defaultRoomElfId(seedWorkspace),
@@ -260,6 +273,7 @@ export function App() {
     selectedMemoryDraftKey && selectedMemoryDraftKey in memoryDrafts
       ? memoryDrafts[selectedMemoryDraftKey]
       : selectedProductMemory?.sections.find((section) => section.key === selectedMemorySection)?.body ?? "";
+  const mainGridTemplateColumns = `${paneLayout.fleet}px ${paneLayout.rooms}px minmax(380px, 1fr)`;
 
   useEffect(() => {
     if (daemonState !== "local" || !selectedRoom?.productId) {
@@ -288,6 +302,10 @@ export function App() {
       cancelled = true;
     };
   }, [daemonState, selectedRoom?.productId]);
+
+  useEffect(() => {
+    window.localStorage.setItem(paneLayoutStorageKey, JSON.stringify(paneLayout));
+  }, [paneLayout]);
 
   const counts = useMemo(() => {
     return workspace.rooms.reduce(
@@ -608,8 +626,11 @@ export function App() {
   };
 
   return (
-    <main className="grid h-screen min-h-[760px] min-w-[1040px] grid-cols-[minmax(220px,18vw)_minmax(380px,1fr)_minmax(380px,34vw)] gap-2.5 bg-[radial-gradient(circle_at_78%_12%,rgba(47,105,177,0.14),transparent_26%),linear-gradient(120deg,rgba(255,255,255,0.78),transparent_35%),#edf0ea] p-2.5 text-stone-900 max-lg:flex max-lg:h-auto max-lg:min-w-0 max-lg:flex-col">
-      <aside className="min-w-[220px] max-w-[360px] resize-x overflow-auto rounded-l-2xl rounded-r-md border border-stone-200 bg-[#fbfbf7]/95 p-4 shadow-2xl shadow-stone-900/10 max-lg:w-full max-lg:max-w-none max-lg:resize-none max-lg:rounded-2xl">
+    <main
+      className="grid h-screen min-h-[760px] min-w-[1040px] gap-2.5 bg-[radial-gradient(circle_at_78%_12%,rgba(47,105,177,0.14),transparent_26%),linear-gradient(120deg,rgba(255,255,255,0.78),transparent_35%),#edf0ea] p-2.5 text-stone-900 max-lg:flex max-lg:h-auto max-lg:min-w-0 max-lg:flex-col"
+      style={{ gridTemplateColumns: mainGridTemplateColumns }}
+    >
+      <aside className="min-w-[220px] overflow-auto rounded-l-2xl rounded-r-md border border-stone-200 bg-[#fbfbf7]/95 p-4 shadow-2xl shadow-stone-900/10 max-lg:w-full max-lg:max-w-none max-lg:rounded-2xl">
         <div className="mb-6 flex items-center gap-3">
           <div className="grid h-10 w-10 place-items-center rounded-lg bg-stone-900 text-stone-50">
             <Sparkles size={18} />
@@ -661,32 +682,39 @@ export function App() {
         </div>
       </aside>
 
-      <section className="min-w-[380px] resize-x overflow-auto rounded-md border border-stone-200 bg-[#fbfbf7]/95 p-4 shadow-2xl shadow-stone-900/10 max-lg:w-full max-lg:min-w-0 max-lg:resize-none max-lg:rounded-2xl" aria-label="Task rooms">
-        <header className="mb-4 flex items-center justify-between gap-4">
-          <div>
-            <p className="text-[11px] font-extrabold uppercase text-stone-500">Task rooms</p>
-            <h2 className="text-2xl font-bold tracking-normal">
-              {selectedProductId === "all" ? "Every active room" : workspace.products.find((item) => item.id === selectedProductId)?.name}
-            </h2>
+      <section className="min-w-[380px] overflow-auto rounded-md border border-stone-200 bg-[#fbfbf7]/95 p-4 shadow-2xl shadow-stone-900/10 max-lg:w-full max-lg:min-w-0 max-lg:rounded-2xl" aria-label="Task rooms">
+        <header className="mb-4 grid gap-3">
+          <div className="flex items-center justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-[11px] font-extrabold uppercase text-stone-500">Task rooms</p>
+              <h2 className="truncate text-2xl font-bold tracking-normal">
+                {selectedProductId === "all" ? "Every active room" : workspace.products.find((item) => item.id === selectedProductId)?.name}
+              </h2>
+            </div>
+            <div className="flex shrink-0 gap-2">
+              <Button variant="outline" size="icon" type="button" aria-label="Start room" onClick={() => startRoomRun(selectedRoom.id, "dry-run")}>
+                <Play size={17} />
+              </Button>
+              <Button
+                type="button"
+                onClick={() => {
+                  setIsCreatingRoom((current) => !current);
+                  setNewRoom((current) => ({
+                    ...current,
+                    productId: selectedProductId === "all" ? current.productId || workspace.products[0]?.id || "" : selectedProductId
+                  }));
+                }}
+              >
+                <Hammer size={16} />
+                New room
+              </Button>
+            </div>
           </div>
-          <div className="flex gap-2">
-            <Button variant="outline" size="icon" type="button" aria-label="Start room" onClick={() => startRoomRun(selectedRoom.id, "dry-run")}>
-              <Play size={17} />
-            </Button>
-            <Button
-              type="button"
-              onClick={() => {
-                setIsCreatingRoom((current) => !current);
-                setNewRoom((current) => ({
-                  ...current,
-                  productId: selectedProductId === "all" ? current.productId || workspace.products[0]?.id || "" : selectedProductId
-                }));
-              }}
-            >
-              <Hammer size={16} />
-              New room
-            </Button>
-          </div>
+          <LayoutControls
+            layout={paneLayout}
+            onChange={(nextLayout) => setPaneLayout(clampPaneLayout(nextLayout))}
+            onReset={() => setPaneLayout(defaultPaneLayout)}
+          />
         </header>
 
         <NeedsMePanel
@@ -838,6 +866,87 @@ export function App() {
       </section>
     </main>
   );
+}
+
+function LayoutControls({
+  layout,
+  onChange,
+  onReset
+}: {
+  layout: PaneLayout;
+  onChange: (layout: PaneLayout) => void;
+  onReset: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-2 rounded-md border border-stone-200 bg-white/85 px-2 py-1.5 shadow-sm" aria-label="Pane layout controls">
+      <SlidersHorizontal className="shrink-0 text-stone-500" size={15} />
+      <label className="grid gap-0.5 text-[11px] font-bold uppercase text-stone-500">
+        Fleet
+        <input
+          aria-label="Fleet pane width"
+          className="w-24 accent-stone-900"
+          type="range"
+          min={220}
+          max={360}
+          step={10}
+          value={layout.fleet}
+          onChange={(event) => onChange({ ...layout, fleet: Number(event.target.value) })}
+        />
+      </label>
+      <label className="grid gap-0.5 text-[11px] font-bold uppercase text-stone-500">
+        Rooms
+        <input
+          aria-label="Task rooms pane width"
+          className="w-28 accent-stone-900"
+          type="range"
+          min={420}
+          max={760}
+          step={20}
+          value={layout.rooms}
+          onChange={(event) => onChange({ ...layout, rooms: Number(event.target.value) })}
+        />
+      </label>
+      <Button className="h-7 px-2 text-[11px]" variant="outline" size="sm" type="button" onClick={onReset}>
+        Reset
+      </Button>
+    </div>
+  );
+}
+
+function readStoredPaneLayout(): PaneLayout {
+  if (typeof window === "undefined") {
+    return defaultPaneLayout;
+  }
+
+  const stored = window.localStorage.getItem(paneLayoutStorageKey);
+  if (!stored) {
+    return defaultPaneLayout;
+  }
+
+  try {
+    const parsed = JSON.parse(stored) as Partial<PaneLayout>;
+    return clampPaneLayout({
+      fleet: typeof parsed.fleet === "number" ? parsed.fleet : defaultPaneLayout.fleet,
+      rooms: typeof parsed.rooms === "number" ? parsed.rooms : defaultPaneLayout.rooms
+    });
+  } catch {
+    return defaultPaneLayout;
+  }
+}
+
+function clampPaneLayout(layout: PaneLayout): PaneLayout {
+  return {
+    fleet: clampNumber(layout.fleet, 220, 360),
+    rooms: clampNumber(layout.rooms, 420, 760)
+  };
+}
+
+function clampNumber(value: number, min: number, max: number) {
+  if (!Number.isFinite(value)) {
+    return min;
+  }
+
+  return Math.min(max, Math.max(min, value));
 }
 
 function NeedsMePanel({
