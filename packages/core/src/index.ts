@@ -55,9 +55,11 @@ export interface Artifact {
 export interface Decision {
   id: string;
   title: string;
-  status: "open" | "approved" | "requested_fix" | "rejected";
+  status: "open" | "approved" | "requested_fix" | "rejected" | "snoozed" | "retried";
   risk: "low" | "medium" | "high";
 }
+
+export type DecisionAction = "approve" | "request_fix" | "reject" | "snooze" | "retry";
 
 export interface DecisionItem {
   id: string;
@@ -134,6 +136,7 @@ export function buildDecisionItems(rooms: Room[]): DecisionItem[] {
       const readyArtifacts = room.artifacts.filter((artifact) => artifact.status === "ready" || artifact.status === "passed");
       const failedArtifacts = room.artifacts.filter((artifact) => artifact.status === "failed");
       const recentLogs = room.logs.slice(-3).map((log) => `${log.level}: ${log.message}`);
+      const canQueueArtifactSignals = room.status !== "done" && room.status !== "idle";
       const items: DecisionItem[] = [];
 
       if (room.status === "asking" || ask) {
@@ -148,11 +151,11 @@ export function buildDecisionItems(rooms: Room[]): DecisionItem[] {
           urgency: 1,
           recommendation: ask?.recommendation ?? "Open the room and answer the elf before continuing.",
           evidence: ask ? [`Options: ${ask.options.join(" / ")}`, ...recentLogs] : recentLogs,
-          actions: ["Open room", "Answer ask", "Add context"]
+          actions: ["Approve", "Request fix", "Snooze"]
         });
       }
 
-      if (room.status === "failed" || room.status === "blocked" || failedArtifacts.length > 0) {
+      if (room.status === "failed" || room.status === "blocked" || (canQueueArtifactSignals && failedArtifacts.length > 0)) {
         items.push({
           id: `need-${room.id}-stuck`,
           roomId: room.id,
@@ -164,11 +167,11 @@ export function buildDecisionItems(rooms: Room[]): DecisionItem[] {
           urgency: 2,
           recommendation: "Inspect the logs and decide whether to retry, kill, or add missing context.",
           evidence: [...failedArtifacts.map((artifact) => `${artifact.title}: ${artifact.summary}`), ...recentLogs],
-          actions: ["Inspect logs", "Retry", "Add context"]
+          actions: ["Retry", "Request fix", "Reject"]
         });
       }
 
-      if (room.status === "ready" || readyArtifacts.length > 0) {
+      if (room.status === "ready") {
         items.push({
           id: `need-${room.id}-ready`,
           roomId: room.id,
@@ -180,7 +183,7 @@ export function buildDecisionItems(rooms: Room[]): DecisionItem[] {
           urgency: 3,
           recommendation: readyArtifacts.length > 0 ? "Review the artifacts and run the relevant check before accepting." : "Open the room and verify why it is marked ready.",
           evidence: readyArtifacts.length > 0 ? readyArtifacts.map((artifact) => `${artifact.title}: ${artifact.summary}`) : recentLogs,
-          actions: ["Review artifacts", "Open diff", "Run check"]
+          actions: ["Approve", "Request fix", "Reject"]
         });
       }
 

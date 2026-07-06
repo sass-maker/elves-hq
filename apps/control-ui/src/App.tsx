@@ -19,7 +19,19 @@ import {
   SquareTerminal,
   TestTube2
 } from "lucide-react";
-import { buildDecisionItems, seedWorkspace, statusLabels, type Artifact, type DecisionItem, type ElfRun, type Product, type Room, type RoomStatus, type WorkspaceSeed } from "@elves-hq/core";
+import {
+  buildDecisionItems,
+  seedWorkspace,
+  statusLabels,
+  type Artifact,
+  type DecisionAction,
+  type DecisionItem,
+  type ElfRun,
+  type Product,
+  type Room,
+  type RoomStatus,
+  type WorkspaceSeed
+} from "@elves-hq/core";
 import { useEffect, useMemo, useState } from "react";
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
@@ -51,6 +63,26 @@ const statusDot: Record<RoomStatus, string> = {
 };
 
 const daemonBaseUrl = import.meta.env.VITE_DAEMON_URL ?? "http://127.0.0.1:4327";
+
+const decisionActionLabels: Record<DecisionAction, string> = {
+  approve: "Approve",
+  request_fix: "Request fix",
+  reject: "Reject",
+  snooze: "Snooze",
+  retry: "Retry"
+};
+
+const decisionActionTone: Record<DecisionAction, "default" | "outline" | "destructive"> = {
+  approve: "default",
+  request_fix: "outline",
+  reject: "destructive",
+  snooze: "outline",
+  retry: "outline"
+};
+
+function decisionActionFromLabel(label: string): DecisionAction | undefined {
+  return (Object.entries(decisionActionLabels).find(([, value]) => value === label)?.[0] as DecisionAction | undefined) ?? undefined;
+}
 
 function roomProduct(workspace: WorkspaceSeed, room: Room): Product {
   const product = workspace.products.find((item) => item.id === room.productId);
@@ -316,6 +348,30 @@ export function App() {
     setCheckPreview((current) => ({ ...current, [roomId]: body.output }));
   };
 
+  const performDecisionAction = async (roomId: string, action: DecisionAction, note?: string) => {
+    const response = await fetch(`${daemonBaseUrl}/api/rooms/${roomId}/decision`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ action, note })
+    });
+
+    if (!response.ok) {
+      return;
+    }
+
+    const body = (await response.json()) as { room: Room; run?: ElfRun; workspace: WorkspaceSeed; needs: DecisionItem[] };
+    setWorkspace(body.workspace);
+    setDecisionItems(body.needs);
+    setSelectedRoomId(body.room.id);
+    setSelectedProductId(body.room.productId);
+    const run = body.run;
+    if (run) {
+      setRoomRuns((current) => ({ ...current, [body.room.id]: [run, ...(current[body.room.id] ?? [])] }));
+    }
+  };
+
   const importFleetRegistry = async () => {
     const response = await fetch(`${daemonBaseUrl}/api/import/fleet-registry`, { method: "POST" });
     if (!response.ok) {
@@ -453,6 +509,7 @@ export function App() {
             setSelectedRoomId(item.roomId);
             setIsCreatingRoom(false);
           }}
+          onAction={(item, action) => performDecisionAction(item.roomId, action)}
         />
 
         {isCreatingRoom ? (
@@ -535,6 +592,7 @@ export function App() {
           onOpenDiff={() => openLatestDiff(selectedRoom.id)}
           onRunCheck={() => runLatestCheck(selectedRoom.id)}
           onKillRun={() => killLatestRun(selectedRoom.id)}
+          onDecisionAction={(action) => performDecisionAction(selectedRoom.id, action)}
         />
       </section>
     </main>
@@ -544,11 +602,13 @@ export function App() {
 function NeedsMePanel({
   items,
   workspace,
-  onOpenRoom
+  onOpenRoom,
+  onAction
 }: {
   items: DecisionItem[];
   workspace: WorkspaceSeed;
   onOpenRoom: (item: DecisionItem) => void;
+  onAction: (item: DecisionItem, action: DecisionAction) => void;
 }) {
   return (
     <section className="mb-4 rounded-xl border border-stone-200 bg-white p-3 shadow-sm" aria-label="Needs Me">
@@ -570,12 +630,7 @@ function NeedsMePanel({
             const tone = item.risk === "high" ? "red" : item.risk === "medium" ? "amber" : "green";
 
             return (
-              <button
-                type="button"
-                className="grid min-h-[164px] gap-2 rounded-lg border border-stone-200 bg-stone-50 p-3 text-left transition-colors hover:border-emerald-300 hover:bg-emerald-50"
-                key={item.id}
-                onClick={() => onOpenRoom(item)}
-              >
+              <article className="grid min-h-[190px] gap-2 rounded-lg border border-stone-200 bg-stone-50 p-3 text-left" key={item.id}>
                 <div className="flex items-center gap-2 text-xs font-extrabold text-stone-500">
                   <span className={cn("h-2.5 w-2.5 rounded-full", statusDot[item.status])} />
                   <span>{product?.name ?? "Unknown project"}</span>
@@ -588,11 +643,35 @@ function NeedsMePanel({
                 </p>
                 <div className="mt-auto flex flex-wrap items-center gap-1.5">
                   <Badge variant={statusTone[item.status]}>{statusLabels[item.status]}</Badge>
-                  <span className="ml-auto inline-flex items-center gap-1 text-xs font-bold text-stone-700">
+                  <button
+                    type="button"
+                    className="ml-auto inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-xs font-bold text-stone-700 hover:bg-white"
+                    onClick={() => onOpenRoom(item)}
+                  >
                     Open <ArrowRight size={13} />
-                  </span>
+                  </button>
                 </div>
-              </button>
+                <div className="flex flex-wrap gap-1.5 border-t border-stone-200 pt-2">
+                  {item.actions.map((label) => {
+                    const action = decisionActionFromLabel(label);
+                    if (!action) {
+                      return null;
+                    }
+                    return (
+                      <Button
+                        className="h-7 px-2 text-[11px]"
+                        variant={decisionActionTone[action]}
+                        size="sm"
+                        type="button"
+                        key={label}
+                        onClick={() => onAction(item, action)}
+                      >
+                        {label}
+                      </Button>
+                    );
+                  })}
+                </div>
+              </article>
             );
           })}
         </div>
@@ -707,7 +786,8 @@ function RoomDetail({
   onStartMode,
   onOpenDiff,
   onRunCheck,
-  onKillRun
+  onKillRun,
+  onDecisionAction
 }: {
   room: Room;
   workspace: WorkspaceSeed;
@@ -723,6 +803,7 @@ function RoomDetail({
   onOpenDiff: () => void;
   onRunCheck: () => void;
   onKillRun: () => void;
+  onDecisionAction: (action: DecisionAction) => void;
 }) {
   const product = roomProduct(workspace, room);
   const elf = roomElf(workspace, room);
@@ -791,6 +872,13 @@ function RoomDetail({
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onOpenDiff}><GitBranch size={15} />Diff</Button>
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onRunCheck}><TestTube2 size={15} />Check</Button>
             <Button className="min-w-0 px-2" variant="destructive" size="sm" type="button" onClick={onKillRun} disabled={!activeRun}><CircleStop size={15} />Kill</Button>
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-2 border-t border-stone-200 pt-3">
+            <Button className="min-w-0 px-2" size="sm" type="button" onClick={() => onDecisionAction("approve")}>Approve</Button>
+            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onDecisionAction("request_fix")}>Request fix</Button>
+            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onDecisionAction("snooze")}>Snooze</Button>
+            <Button className="min-w-0 px-2" variant="destructive" size="sm" type="button" onClick={() => onDecisionAction("reject")}>Reject</Button>
+            <Button className="col-span-2 min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onDecisionAction("retry")}>Retry latest run</Button>
           </div>
         </div>
       </section>

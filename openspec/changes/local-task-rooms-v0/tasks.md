@@ -18,6 +18,8 @@
 - [x] Add project-wise room creation from the cockpit.
 - [x] Add daemon-backed task and room creation.
 - [x] Add signal-backed Needs Me decision queue.
+- [x] Add persisted founder decision actions.
+- [x] Add retry action from the latest room run mode.
 
 ## Verification
 
@@ -36,4 +38,5 @@
 - [x] `GET /api/runs/:id/check-output`
 - [x] `POST /api/rooms`
 - [x] `GET /api/needs-me`
+- [x] `POST /api/rooms/:id/decision`
 - [x] Browser smoke of local cockpit

@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import type { CheckScriptKey, ElfRun } from "@elves-hq/core";
+import type { CheckScriptKey, DecisionAction, ElfRun } from "@elves-hq/core";
 import { RoomProcessManager } from "./process-manager";
 import { WorkspaceStore } from "./store";
 
@@ -65,6 +65,21 @@ const server = createServer(async (request, response) => {
       const body = await readJson(request);
       const result = store.createTaskRoom(readCreateRoomInput(body));
       sendJson(response, 200, { ...result, workspace: store.getWorkspace() });
+      return;
+    }
+
+    const decisionMatch = url.pathname.match(/^\/api\/rooms\/([^/]+)\/decision$/);
+    if (request.method === "POST" && decisionMatch) {
+      const body = await readJson(request);
+      const input = readDecisionInput(body);
+      if (input.action === "retry") {
+        const result = processManager.retryRoom(decisionMatch[1]);
+        sendJson(response, 200, { ...result, workspace: store.getWorkspace(), needs: store.getDecisionItems() });
+        return;
+      }
+
+      const room = store.resolveDecision(decisionMatch[1], input);
+      sendJson(response, 200, { room, workspace: store.getWorkspace(), needs: store.getDecisionItems() });
       return;
     }
 
@@ -200,5 +215,21 @@ function readCreateRoomInput(body: unknown) {
     title: record.title,
     acceptanceCriteria: Array.isArray(record.acceptanceCriteria) ? record.acceptanceCriteria.filter((item): item is string => typeof item === "string") : [],
     assignedElfId: typeof record.assignedElfId === "string" ? record.assignedElfId : undefined
+  };
+}
+
+function readDecisionInput(body: unknown): { action: DecisionAction; note?: string } {
+  if (!body || typeof body !== "object") {
+    throw new Error("Expected JSON body");
+  }
+
+  const record = body as { action?: unknown; note?: unknown };
+  if (record.action !== "approve" && record.action !== "request_fix" && record.action !== "reject" && record.action !== "snooze" && record.action !== "retry") {
+    throw new Error("Unsupported decision action");
+  }
+
+  return {
+    action: record.action,
+    note: typeof record.note === "string" ? record.note : undefined
   };
 }

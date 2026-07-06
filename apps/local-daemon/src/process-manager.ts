@@ -70,6 +70,16 @@ export class RoomProcessManager {
     return { ok: true };
   }
 
+  retryRoom(roomId: string) {
+    if ([...this.running.values()].some((entry) => entry.roomId === roomId)) {
+      throw new Error("A run is already active in this room");
+    }
+
+    const latestRun = this.store.listRuns(roomId)[0];
+    this.store.resolveDecision(roomId, { action: "retry", note: latestRun ? `Retrying ${latestRun.mode} from ${latestRun.id}.` : "Starting first dry run." });
+    return this.startRoomRun(roomId, { mode: latestRun?.mode ?? "dry-run" });
+  }
+
   runCheck(runId: string, requestedScript?: CheckScriptKey) {
     const run = this.store.getRun(runId);
     if (run.status === "running") {

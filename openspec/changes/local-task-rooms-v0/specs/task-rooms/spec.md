@@ -42,6 +42,23 @@ Elves HQ MUST expose one founder-facing queue for rooms that need judgment.
 - **AND** each item includes the room, project, risk, reason, recommendation, and evidence
 - **AND** selecting an item opens the relevant room
 
+### Requirement: Founder decision actions
+
+The cockpit MUST let the founder resolve surfaced decisions without editing the database manually.
+
+#### Scenario: Founder resolves a queue item
+
+- **WHEN** the founder approves, requests a fix, rejects, snoozes, or retries a room
+- **THEN** the daemon persists a decision record
+- **AND** the room log records the founder action
+- **AND** the room status changes so resolved items leave the Needs Me queue
+
+#### Scenario: Founder retries a room
+
+- **WHEN** the founder retries a room
+- **THEN** the daemon starts a new run using the latest run mode for that room
+- **AND** the new run appears in the room run list
+
 ### Requirement: Local-first V0
 
 The V0 cockpit MUST run locally without cloud auth or hosted API dependencies.

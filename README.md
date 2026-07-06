@@ -33,6 +33,8 @@ Rooms can be created directly in the cockpit. Each room creates a task, assigns 
 
 The Needs Me queue is generated from room signals, not generic activity. It surfaces unresolved asks, blocked or failed runs, failed gates, and ready artifacts through the cockpit and `GET /api/needs-me`.
 
+Founder actions are persisted with each room. Approve/reject close the room, request-fix and snooze return it to idle, and retry starts a new run using the latest room run mode.
+
 ## Checks
 
 ```bash

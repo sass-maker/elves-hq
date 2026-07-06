@@ -7,6 +7,7 @@ import {
   seedWorkspace,
   type Artifact,
   type Decision,
+  type DecisionAction,
   type DecisionItem,
   type Elf,
   type ElfRun,
@@ -106,6 +107,11 @@ export interface CreateRoomInput {
   title: string;
   acceptanceCriteria: string[];
   assignedElfId?: string;
+}
+
+export interface ResolveDecisionInput {
+  action: DecisionAction;
+  note?: string;
 }
 
 export class WorkspaceStore {
@@ -296,6 +302,32 @@ export class WorkspaceStore {
       .run(id, roomId, artifact.type, artifact.title, artifact.summary, artifact.status);
 
     return { id, ...artifact };
+  }
+
+  resolveDecision(roomId: string, input: ResolveDecisionInput): Room {
+    const room = this.getRoom(roomId);
+    const note = input.note?.trim();
+    const resolution = decisionResolution(input.action, note);
+    const decisionId = `dec-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
+    this.db.exec("BEGIN");
+    try {
+      this.db
+        .prepare("INSERT INTO decisions (id, room_id, title, status, risk) VALUES (?, ?, ?, ?, ?)")
+        .run(decisionId, room.id, resolution.title, resolution.status, resolution.risk);
+      this.db.prepare("DELETE FROM room_asks WHERE room_id = ?").run(room.id);
+      this.db.prepare("UPDATE rooms SET status = ?, summary = ?, last_activity_at = ? WHERE id = ?").run(resolution.roomStatus, resolution.summary, "now", room.id);
+      if (note) {
+        this.db.prepare("INSERT INTO room_notes (room_id, body, created_at) VALUES (?, ?, ?)").run(room.id, note, new Date().toISOString());
+      }
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+
+    this.appendRoomLog(room.id, resolution.logLevel, resolution.logMessage);
+    return this.getRoom(room.id);
   }
 
   listRuns(roomId: string): ElfRun[] {
@@ -576,6 +608,71 @@ function hydrateRun(row: RunRow): ElfRun {
     endedAt: row.ended_at,
     exitCode: row.exit_code
   };
+}
+
+function decisionResolution(action: DecisionAction, note: string | undefined): {
+  title: string;
+  status: Decision["status"];
+  risk: Decision["risk"];
+  roomStatus: Room["status"];
+  summary: string;
+  logLevel: RoomLog["level"];
+  logMessage: string;
+} {
+  const suffix = note ? `: ${note}` : ".";
+
+  switch (action) {
+    case "approve":
+      return {
+        title: "Founder approved room output",
+        status: "approved",
+        risk: "low",
+        roomStatus: "done",
+        summary: `Founder approved this room${suffix}`,
+        logLevel: "success",
+        logMessage: `Founder approved the room${suffix}`
+      };
+    case "request_fix":
+      return {
+        title: "Founder requested a fix",
+        status: "requested_fix",
+        risk: "medium",
+        roomStatus: "idle",
+        summary: `Founder requested a fix${suffix}`,
+        logLevel: "warning",
+        logMessage: `Founder requested a fix${suffix}`
+      };
+    case "reject":
+      return {
+        title: "Founder rejected room output",
+        status: "rejected",
+        risk: "medium",
+        roomStatus: "done",
+        summary: `Founder rejected this room${suffix}`,
+        logLevel: "warning",
+        logMessage: `Founder rejected the room${suffix}`
+      };
+    case "snooze":
+      return {
+        title: "Founder snoozed room",
+        status: "snoozed",
+        risk: "low",
+        roomStatus: "idle",
+        summary: `Founder snoozed this room${suffix}`,
+        logLevel: "info",
+        logMessage: `Founder snoozed the room${suffix}`
+      };
+    case "retry":
+      return {
+        title: "Founder retried room",
+        status: "retried",
+        risk: "medium",
+        roomStatus: "idle",
+        summary: `Founder requested a retry${suffix}`,
+        logLevel: "info",
+        logMessage: `Founder requested a retry${suffix}`
+      };
+  }
 }
 
 function mergeProducts(primary: Product[], fallback: Product[]): Product[] {
