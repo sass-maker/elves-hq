@@ -164,6 +164,8 @@ export function App() {
   const [cleanupPreview, setCleanupPreview] = useState<Record<string, string>>({});
   const [transcriptPreview, setTranscriptPreview] = useState<Record<string, string>>({});
   const [decisionPreview, setDecisionPreview] = useState<Record<string, string>>({});
+  const [dailyBriefMarkdown, setDailyBriefMarkdown] = useState<string>("");
+  const [dailyBriefExportStatus, setDailyBriefExportStatus] = useState<string>("");
   const [decisionItems, setDecisionItems] = useState<DecisionItem[]>(buildDecisionItems(seedWorkspace.rooms));
   const [dailyBrief, setDailyBrief] = useState<DailyBrief>(buildDailyBrief(seedWorkspace));
   const [productMemoryById, setProductMemoryById] = useState<Record<string, ProductMemory>>({});
@@ -667,6 +669,30 @@ export function App() {
     });
   };
 
+  const exportDailyBriefMarkdown = async () => {
+    const response = await fetch(`${daemonBaseUrl}/api/briefs/daily.md`);
+    if (!response.ok) {
+      setDailyBriefExportStatus("Daily Brief export failed.");
+      return;
+    }
+
+    const body = (await response.json()) as { markdown: string; brief: DailyBrief };
+    setDailyBriefMarkdown(body.markdown);
+    setDailyBrief(body.brief);
+
+    if (navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(body.markdown);
+        setDailyBriefExportStatus("Markdown copied.");
+        return;
+      } catch {
+        // Preview is still useful if clipboard access is blocked.
+      }
+    }
+
+    setDailyBriefExportStatus("Markdown ready.");
+  };
+
   return (
     <main
       className="grid h-screen min-h-[760px] min-w-[1040px] gap-2.5 bg-[radial-gradient(circle_at_78%_12%,rgba(47,105,177,0.14),transparent_26%),linear-gradient(120deg,rgba(255,255,255,0.78),transparent_35%),#edf0ea] p-2.5 text-stone-900 max-lg:flex max-lg:h-auto max-lg:min-w-0 max-lg:flex-col"
@@ -776,6 +802,9 @@ export function App() {
         <DailyBriefPanel
           brief={dailyBrief}
           selectedProductId={selectedProductId}
+          markdownPreview={dailyBriefMarkdown}
+          exportStatus={dailyBriefExportStatus}
+          onExportMarkdown={exportDailyBriefMarkdown}
           onOpenRoom={(item) => {
             setSelectedProductId(item.productId);
             setSelectedRoomId(item.roomId);
@@ -1095,10 +1124,16 @@ const briefSectionLabels: Record<DailyBriefSection, string> = {
 function DailyBriefPanel({
   brief,
   selectedProductId,
+  markdownPreview,
+  exportStatus,
+  onExportMarkdown,
   onOpenRoom
 }: {
   brief: DailyBrief;
   selectedProductId: string;
+  markdownPreview: string;
+  exportStatus: string;
+  onExportMarkdown: () => void;
   onOpenRoom: (item: DailyBriefItem) => void;
 }) {
   const sections: DailyBriefSection[] = ["shipped", "ready", "blocked", "failed", "active"];
@@ -1119,9 +1154,15 @@ function DailyBriefPanel({
             <h3 className="text-base font-bold tracking-normal">{itemCount} artifact-backed update{itemCount === 1 ? "" : "s"}</h3>
           </div>
         </div>
-        <Badge variant={visibleRecommendations.length > 0 ? "blue" : "secondary"}>
-          {visibleRecommendations.length > 0 ? `${visibleRecommendations.length} next` : "No asks"}
-        </Badge>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button variant="outline" size="sm" type="button" onClick={onExportMarkdown}>
+            <FileText size={14} />
+            Brief
+          </Button>
+          <Badge variant={visibleRecommendations.length > 0 ? "blue" : "secondary"}>
+            {visibleRecommendations.length > 0 ? `${visibleRecommendations.length} next` : "No asks"}
+          </Badge>
+        </div>
       </div>
 
       <div className="grid gap-2">
@@ -1179,6 +1220,16 @@ function DailyBriefPanel({
             </div>
           ))}
         </div>
+        {exportStatus ? (
+          <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-2 py-1.5 text-xs font-semibold text-emerald-900">
+            {exportStatus}
+          </div>
+        ) : null}
+        {markdownPreview ? (
+          <pre className="max-h-72 overflow-auto rounded-lg bg-stone-950 p-3 text-xs leading-5 text-stone-100" aria-label="Daily Brief Markdown">
+            <code>{markdownPreview}</code>
+          </pre>
+        ) : null}
       </div>
     </section>
   );

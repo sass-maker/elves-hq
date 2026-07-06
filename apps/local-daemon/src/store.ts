@@ -9,6 +9,7 @@ import {
   getApprovalBlockers,
   getBlockingArtifacts,
   productMemorySectionDefinitions,
+  renderDailyBriefMarkdown,
   seedWorkspace,
   type Artifact,
   type DailyBrief,
@@ -175,6 +176,14 @@ export class WorkspaceStore {
 
   getDailyBrief(): DailyBrief {
     return buildDailyBrief(this.getWorkspace());
+  }
+
+  getDailyBriefMarkdown(): { brief: DailyBrief; markdown: string } {
+    const brief = this.getDailyBrief();
+    return {
+      brief,
+      markdown: renderDailyBriefMarkdown(brief)
+    };
   }
 
   generateRoomTranscript(roomId: string): { roomId: string; outputPath: string; transcript: string; room: Room } {

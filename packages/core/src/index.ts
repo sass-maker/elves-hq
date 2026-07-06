@@ -448,6 +448,63 @@ export function buildDailyBrief(workspace: WorkspaceSeed, generatedAt = new Date
   };
 }
 
+export function renderDailyBriefMarkdown(brief: DailyBrief): string {
+  const lines = [
+    "# Daily Brief",
+    "",
+    `Generated: ${brief.generatedAt}`,
+    "",
+    "## Totals",
+    "",
+    `- Rooms: ${brief.totals.rooms}`,
+    `- Decisions waiting: ${brief.totals.decisions}`,
+    `- Ready: ${brief.totals.ready}`,
+    `- Blocked: ${brief.totals.blocked}`,
+    `- Failed: ${brief.totals.failed}`,
+    `- Active: ${brief.totals.active}`,
+    "",
+    "## Recommended Next",
+    ""
+  ];
+
+  if (brief.recommendedNext.length === 0) {
+    lines.push("- None");
+  } else {
+    brief.recommendedNext.forEach((item, index) => {
+      lines.push(`${index + 1}. **${item.productName}: ${item.title}** (${item.risk})`);
+      lines.push(`   - ${item.recommendation}`);
+    });
+  }
+
+  const sections: Array<[DailyBriefSection, string]> = [
+    ["shipped", "Shipped"],
+    ["ready", "Ready"],
+    ["blocked", "Blocked"],
+    ["failed", "Failed"],
+    ["active", "Active"]
+  ];
+
+  for (const [section, title] of sections) {
+    lines.push("", `## ${title}`, "");
+    const items = brief.sections[section];
+    if (items.length === 0) {
+      lines.push("- None");
+      continue;
+    }
+
+    for (const item of items) {
+      lines.push(`- **${item.productName}: ${item.title}**`);
+      lines.push(`  - Status: ${item.status}`);
+      lines.push(`  - Summary: ${item.summary}`);
+      item.evidence.slice(0, 4).forEach((evidence) => {
+        lines.push(`  - Evidence: ${evidence}`);
+      });
+    }
+  }
+
+  return `${lines.join("\n")}\n`;
+}
+
 function briefItem(room: Room, productName: string): DailyBriefItem {
   const artifactEvidence = room.artifacts.slice(-3).map((artifact) => `${artifact.title}: ${artifact.summary}`);
   const askEvidence = room.asks.slice(0, 1).map((ask) => `Ask: ${ask.question}`);
