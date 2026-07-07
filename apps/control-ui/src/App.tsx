@@ -105,6 +105,8 @@ type PaneLayout = {
 
 type RoomDeckScope = "active" | "all";
 
+type OverviewPanel = "needs" | "fm" | "backlog" | "brief";
+
 type RoomWorkbenchTab = "timeline" | "logs" | "artifacts" | "outputs" | "notes" | "memory";
 
 type RoomTimelineTone = "green" | "amber" | "red" | "blue" | "secondary";
@@ -250,7 +252,7 @@ export function App() {
   const [memoryDrafts, setMemoryDrafts] = useState<Record<string, string>>({});
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
   const [isAddingProduct, setIsAddingProduct] = useState(false);
-  const [showDailyBrief, setShowDailyBrief] = useState(false);
+  const [activeOverviewPanel, setActiveOverviewPanel] = useState<OverviewPanel>("needs");
   const [paneLayout, setPaneLayout] = useState<PaneLayout>(readStoredPaneLayout);
   const [roomWorkbenchTabsById, setRoomWorkbenchTabsById] = useState<Record<string, RoomWorkbenchTab>>({});
   const [focusedRoomId, setFocusedRoomId] = useState<string | null>(null);
@@ -408,6 +410,7 @@ export function App() {
   const selectedClosedTaskCount = selectedProductTasks.length - selectedBacklogTasks.length;
   const selectedProductMemory = selectedRoom ? productMemoryById[selectedRoom.productId] : undefined;
   const productPulseRows = useMemo(() => buildProductPulseRows(workspace), [workspace]);
+  const visibleBriefRecommendationCount = dailyBrief.recommendedNext.filter((item) => selectedProductId === "all" || item.productId === selectedProductId).length;
   const selectedMemoryDraftKey = selectedRoom ? `${selectedRoom.productId}:${selectedMemorySection}` : "";
   const selectedMemorySectionBody =
     selectedMemoryDraftKey && selectedMemoryDraftKey in memoryDrafts
@@ -1270,53 +1273,59 @@ export function App() {
           </div>
         </header>
 
-        <NeedsMePanel
-          items={visibleDecisionItems}
-          workspace={workspace}
-          onOpenRoom={(item) => {
-            setSelectedProductId(item.productId);
-            setSelectedRoomId(item.roomId);
-            setIsCreatingRoom(false);
+        <OverviewSwitcher
+          activePanel={activeOverviewPanel}
+          counts={{
+            needs: visibleDecisionItems.length,
+            fm: elfFmFeed.transcript.filter((item) => selectedProductId === "all" || item.productId === selectedProductId).length,
+            backlog: selectedBacklogTasks.length,
+            brief: visibleBriefRecommendationCount
           }}
-          onAction={(item, action) => performDecisionAction(item.roomId, action)}
+          onSelectPanel={setActiveOverviewPanel}
         />
 
-        <ElfFMPanel
-          feed={elfFmFeed}
-          selectedProductId={selectedProductId}
-          onOpenRoom={(roomId, productId) => {
-            setSelectedProductId(productId);
-            setSelectedRoomId(roomId);
-            setIsCreatingRoom(false);
-          }}
-        />
+        {activeOverviewPanel === "needs" ? (
+          <NeedsMePanel
+            items={visibleDecisionItems}
+            workspace={workspace}
+            onOpenRoom={(item) => {
+              setSelectedProductId(item.productId);
+              setSelectedRoomId(item.roomId);
+              setIsCreatingRoom(false);
+            }}
+            onAction={(item, action) => performDecisionAction(item.roomId, action)}
+          />
+        ) : null}
 
-        <TaskBacklogPanel
-          product={selectedProduct}
-          tasks={selectedBacklogTasks}
-          closedTaskCount={selectedClosedTaskCount}
-          workspace={workspace}
-          draft={newTask}
-          assignment={backlogAssignment}
-          onDraftChange={setNewTask}
-          onAssignmentChange={setBacklogAssignment}
-          onCreateTask={createBacklogTask}
-          onAssignTask={assignBacklogTask}
-          onUpdateTaskStatus={updateBacklogTaskStatus}
-        />
+        {activeOverviewPanel === "fm" ? (
+          <ElfFMPanel
+            feed={elfFmFeed}
+            selectedProductId={selectedProductId}
+            onOpenRoom={(roomId, productId) => {
+              setSelectedProductId(productId);
+              setSelectedRoomId(roomId);
+              setIsCreatingRoom(false);
+            }}
+          />
+        ) : null}
 
-        <div className="mb-4 flex items-center justify-between rounded-xl border border-stone-800 bg-stone-900/70 p-3">
-          <div>
-            <p className="text-[11px] font-extrabold uppercase text-stone-500">Daily Brief</p>
-            <p className="text-sm text-stone-300">{dailyBrief.totals.decisions} decisions · {dailyBrief.totals.ready} ready · {dailyBrief.totals.failed} failed</p>
-          </div>
-          <Button variant="outline" size="sm" type="button" onClick={() => setShowDailyBrief((current) => !current)}>
-            <FileText size={14} />
-            {showDailyBrief ? "Hide" : "Open"}
-          </Button>
-        </div>
+        {activeOverviewPanel === "backlog" ? (
+          <TaskBacklogPanel
+            product={selectedProduct}
+            tasks={selectedBacklogTasks}
+            closedTaskCount={selectedClosedTaskCount}
+            workspace={workspace}
+            draft={newTask}
+            assignment={backlogAssignment}
+            onDraftChange={setNewTask}
+            onAssignmentChange={setBacklogAssignment}
+            onCreateTask={createBacklogTask}
+            onAssignTask={assignBacklogTask}
+            onUpdateTaskStatus={updateBacklogTaskStatus}
+          />
+        ) : null}
 
-        {showDailyBrief ? (
+        {activeOverviewPanel === "brief" ? (
           <DailyBriefPanel
             brief={dailyBrief}
             selectedProductId={selectedProductId}
@@ -1744,6 +1753,47 @@ function NeedsMePanel({
       ) : (
         <p className="rounded-lg bg-stone-50 px-3 py-2 text-sm text-stone-500">No room currently has an ask, failed run, blocker, or ready review.</p>
       )}
+    </section>
+  );
+}
+
+const overviewPanelLabels: Record<OverviewPanel, string> = {
+  needs: "Needs Me",
+  fm: "Elf FM",
+  backlog: "Backlog",
+  brief: "Brief"
+};
+
+function OverviewSwitcher({
+  activePanel,
+  counts,
+  onSelectPanel
+}: {
+  activePanel: OverviewPanel;
+  counts: Record<OverviewPanel, number>;
+  onSelectPanel: (panel: OverviewPanel) => void;
+}) {
+  const panels: OverviewPanel[] = ["needs", "fm", "backlog", "brief"];
+
+  return (
+    <section className="mb-3 rounded-xl border border-stone-800 bg-stone-900/70 p-2" aria-label="Cockpit overview">
+      <div className="grid grid-cols-4 gap-1.5">
+        {panels.map((panel) => (
+          <button
+            className={cn(
+              "grid min-h-12 gap-1 rounded-lg border px-2 py-1.5 text-left transition-colors",
+              activePanel === panel ? "border-emerald-400 bg-emerald-400 text-stone-950" : "border-stone-800 bg-stone-950/70 text-stone-300 hover:border-stone-700"
+            )}
+            type="button"
+            key={panel}
+            aria-pressed={activePanel === panel}
+            onClick={() => onSelectPanel(panel)}
+          >
+            <span className="truncate text-[11px] font-extrabold uppercase">{overviewPanelLabels[panel]}</span>
+            <span className="text-lg font-black leading-5">{counts[panel]}</span>
+          </button>
+        ))}
+      </div>
     </section>
   );
 }

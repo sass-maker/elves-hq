@@ -1,8 +1,7 @@
-# fleet-dashboard Specification
+# Fleet Dashboard Specification Delta
 
-## Purpose
-Define the product-first cockpit surfaces that summarize portfolio state without forcing the founder to inspect every room.
-## Requirements
+## MODIFIED Requirements
+
 ### Requirement: Product fleet pulse
 
 Elves HQ MUST show product-first status rows derived from existing room signals.
@@ -18,6 +17,8 @@ Elves HQ MUST show product-first status rows derived from existing room signals.
 
 - **WHEN** the founder selects a product row in Fleet Pulse
 - **THEN** the cockpit filters the task-room pane to that product
+
+## ADDED Requirements
 
 ### Requirement: Compact overview switcher
 
