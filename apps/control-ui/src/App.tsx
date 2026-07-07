@@ -1035,6 +1035,37 @@ export function App() {
     setProductSettingsStatus((current) => ({ ...current, [productId]: "Saved." }));
   };
 
+  const removeProduct = async (product: Product) => {
+    if (!window.confirm(`Remove ${product.name} from Elves HQ? This only removes local cockpit records. It will not delete the folder on disk.`)) {
+      return;
+    }
+
+    const response = await fetch(`${daemonBaseUrl}/api/products/${product.id}/remove`, { method: "POST" });
+    if (!response.ok) {
+      const body = (await response.json().catch(() => ({ error: "Product removal failed." }))) as { error?: string };
+      setProductSettingsStatus((current) => ({ ...current, [product.id]: body.error ?? "Product removal failed." }));
+      return;
+    }
+
+    const body = (await response.json()) as { productId: string; workspace: WorkspaceSeed; needs: DecisionItem[]; brief: DailyBrief; fm: ElfFmFeed };
+    setWorkspace(body.workspace);
+    setDecisionItems(body.needs);
+    setDailyBrief(body.brief);
+    setElfFmFeed(body.fm);
+    setSelectedProductId("all");
+    setSelectedRoomId(body.workspace.rooms[0]?.id ?? "");
+    setProductInspections((current) => {
+      const next = { ...current };
+      delete next[body.productId];
+      return next;
+    });
+    setProductSettingsStatus((current) => {
+      const next = { ...current };
+      delete next[body.productId];
+      return next;
+    });
+  };
+
   const applyLatestDiff = async (roomId: string) => {
     const run = roomRuns[roomId]?.find((item) => item.mode.includes("worktree") && item.status === "completed");
     if (!run) {
@@ -1149,6 +1180,7 @@ export function App() {
             inspection={selectedProductInspection}
             settingsStatus={productSettingsStatus[selectedProduct.id]}
             onSaveSettings={(input) => saveProductSettings(selectedProduct.id, input)}
+            onRemove={() => removeProduct(selectedProduct)}
           />
         ) : null}
 
@@ -2044,12 +2076,14 @@ function ProductFolderCard({
   product,
   inspection,
   settingsStatus,
-  onSaveSettings
+  onSaveSettings,
+  onRemove
 }: {
   product: Product;
   inspection?: ProductFolderInspection;
   settingsStatus?: string;
   onSaveSettings?: (input: Pick<Product, "status" | "priority" | "currentGoal">) => void;
+  onRemove?: () => void;
 }) {
   const healthy = inspection?.exists && inspection.isDirectory && inspection.isGitRepo;
   const gateScripts = inspection?.scripts.filter((script) => script.gate).slice(0, 4) ?? [];
@@ -2138,9 +2172,16 @@ function ProductFolderCard({
           />
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs text-stone-500">{settingsStatus ?? "Local product settings."}</span>
-            <Button size="sm" type="button" onClick={() => onSaveSettings(settingsDraft)}>
-              Save
-            </Button>
+            <div className="flex shrink-0 items-center gap-2">
+              {onRemove ? (
+                <Button size="sm" variant="destructive" type="button" onClick={onRemove}>
+                  Remove
+                </Button>
+              ) : null}
+              <Button size="sm" type="button" onClick={() => onSaveSettings(settingsDraft)}>
+                Save
+              </Button>
+            </div>
           </div>
         </div>
       ) : null}

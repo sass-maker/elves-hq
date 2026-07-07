@@ -91,6 +91,13 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    const productRemoveMatch = url.pathname.match(/^\/api\/products\/([^/]+)\/remove$/);
+    if (request.method === "POST" && productRemoveMatch) {
+      const result = store.removeProduct(productRemoveMatch[1]);
+      sendJson(response, 200, { ...result, workspace: store.getWorkspace(), needs: store.getDecisionItems(), brief: store.getDailyBrief(), fm: store.getElfFmFeed() });
+      return;
+    }
+
     if (request.method === "POST" && url.pathname === "/api/tasks") {
       const body = await readJson(request);
       const task = store.createTask(readCreateTaskInput(body));

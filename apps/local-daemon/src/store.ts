@@ -391,6 +391,47 @@ export class WorkspaceStore {
     return this.getProduct(product.id);
   }
 
+  removeProduct(productId: string): { productId: string } {
+    const product = this.getProduct(productId);
+    const runningCount = (
+      this.db
+        .prepare(
+          `SELECT COUNT(*) AS count
+           FROM elf_runs
+           WHERE status = ?
+             AND room_id IN (SELECT id FROM rooms WHERE product_id = ?)`
+        )
+        .get("running", product.id) as { count: number }
+    ).count;
+
+    if (runningCount > 0) {
+      throw new Error("Stop running elf runs before removing this product from the local registry.");
+    }
+
+    this.db.exec("BEGIN");
+    try {
+      const roomRows = this.db.prepare("SELECT id FROM rooms WHERE product_id = ?").all(product.id) as Array<{ id: string }>;
+      const roomIds = roomRows.map((room) => room.id);
+      for (const roomId of roomIds) {
+        this.db.prepare("DELETE FROM elf_runs WHERE room_id = ?").run(roomId);
+        this.db.prepare("DELETE FROM room_logs WHERE room_id = ?").run(roomId);
+        this.db.prepare("DELETE FROM room_asks WHERE room_id = ?").run(roomId);
+        this.db.prepare("DELETE FROM artifacts WHERE room_id = ?").run(roomId);
+        this.db.prepare("DELETE FROM decisions WHERE room_id = ?").run(roomId);
+        this.db.prepare("DELETE FROM room_notes WHERE room_id = ?").run(roomId);
+      }
+      this.db.prepare("DELETE FROM rooms WHERE product_id = ?").run(product.id);
+      this.db.prepare("DELETE FROM tasks WHERE productId = ?").run(product.id);
+      this.db.prepare("DELETE FROM products WHERE id = ?").run(product.id);
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+
+    return { productId: product.id };
+  }
+
   getTask(taskId: string): Task {
     const row = this.db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId) as unknown as TaskRow | undefined;
     if (!row) {
