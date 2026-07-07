@@ -158,9 +158,6 @@ type RoomOutputPreview = {
 type ProductPulseRow = {
   product: Product;
   signal: RoomStatus;
-  summary: string;
-  roomCount: number;
-  activeCount: number;
   needsCount: number;
 };
 
@@ -2546,7 +2543,6 @@ function DailyBriefPanel({
 function buildProductPulseRows(workspace: WorkspaceSeed): ProductPulseRow[] {
   return workspace.products.map((product) => {
     const rooms = workspace.rooms.filter((room) => room.productId === product.id);
-    const activeRooms = rooms.filter((room) => room.status !== "done");
     const needsRooms = rooms.filter((room) => room.status === "asking" || room.status === "ready" || room.status === "blocked" || room.status === "failed");
     const signalRoom = statusOrder.map((status) => rooms.find((room) => room.status === status)).find((room): room is Room => Boolean(room));
     const signal = signalRoom?.status ?? "idle";
@@ -2554,9 +2550,6 @@ function buildProductPulseRows(workspace: WorkspaceSeed): ProductPulseRow[] {
     return {
       product,
       signal,
-      summary: signalRoom?.summary ?? product.currentGoal,
-      roomCount: rooms.length,
-      activeCount: activeRooms.length,
       needsCount: needsRooms.length
     };
   });
@@ -2572,37 +2565,31 @@ function FleetPulsePanel({
   onSelectProduct: (productId: string) => void;
 }) {
   return (
-    <section className="mt-3 rounded-xl border border-stone-800 bg-stone-900/70 p-3" aria-label="Fleet Pulse">
+    <section className="mt-3 rounded-xl border border-stone-800 bg-stone-900/50 p-3" aria-label="Fleet Pulse">
       <div className="mb-2 flex items-center justify-between gap-2">
         <div>
           <p className="text-[11px] font-extrabold uppercase text-stone-500">Fleet Pulse</p>
-          <h2 className="text-sm font-bold text-stone-100">Product signals</h2>
+          <h2 className="text-sm font-bold text-stone-100">Projects</h2>
         </div>
         <Badge variant="secondary">{rows.length}</Badge>
       </div>
-      <div className="grid gap-2">
+      <div className="grid gap-1">
         {rows.map((row) => (
           <button
             className={cn(
-              "grid gap-1 rounded-lg border bg-stone-950/60 p-2 text-left transition-colors hover:border-emerald-400/60",
-              selectedProductId === row.product.id ? "border-emerald-400/70" : "border-stone-800"
+              "flex min-h-10 items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors hover:border-stone-700 hover:bg-stone-950/70",
+              selectedProductId === row.product.id ? "border-emerald-500/40 bg-stone-950/80" : "border-transparent"
             )}
             type="button"
             key={row.product.id}
             onClick={() => onSelectProduct(row.product.id)}
           >
-            <span className={cn("h-1.5 rounded-full", statusDot[row.signal])} />
-            <span className="flex min-w-0 items-center gap-2">
-              <span className="truncate text-xs font-extrabold text-stone-100">{row.product.name}</span>
-              <Badge className="ml-auto" variant={statusTone[row.signal]}>{statusLabels[row.signal]}</Badge>
+            <span className={cn("size-2 shrink-0 rounded-full", statusDot[row.signal])} />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-xs font-extrabold text-stone-100">{row.product.name}</span>
+              <span className="block text-[10px] font-bold uppercase text-stone-500">{statusLabels[row.signal]}</span>
             </span>
-            <span className="line-clamp-2 text-[11px] leading-4 text-stone-400">{row.summary}</span>
-            <span className="flex items-center gap-2 text-[10px] font-bold uppercase text-stone-500">
-              <span>{row.product.priority}</span>
-              <span>{row.activeCount} active</span>
-              <span>{row.needsCount} need</span>
-              <span>{row.roomCount} rooms</span>
-            </span>
+            {row.needsCount > 0 ? <Badge variant={statusTone[row.signal]}>{row.needsCount}</Badge> : null}
           </button>
         ))}
       </div>
