@@ -65,6 +65,11 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    if (request.method === "GET" && url.pathname === "/api/fm/feed") {
+      sendJson(response, 200, store.getElfFmFeed());
+      return;
+    }
+
     if (request.method === "POST" && url.pathname === "/api/import/fleet-registry") {
       const result = store.importFleetRegistry();
       sendJson(response, 200, { ...result, workspace: store.getWorkspace() });

@@ -15,6 +15,7 @@ import {
   Minimize2,
   PanelRightOpen,
   Play,
+  Radio,
   Download,
   Inbox,
   ScrollText,
@@ -26,6 +27,7 @@ import {
   Trash2
 } from "lucide-react";
 import {
+  buildElfFmFeed,
   buildDailyBrief,
   buildDecisionItems,
   seedWorkspace,
@@ -36,6 +38,9 @@ import {
   type DailyBriefSection,
   type DecisionAction,
   type DecisionItem,
+  type ElfFmFeed,
+  type ElfFmStation,
+  type ElfFmTranscriptItem,
   type ElfRun,
   type Playbook,
   type Product,
@@ -64,6 +69,14 @@ const statusTone: Record<RoomStatus, "green" | "amber" | "red" | "blue" | "secon
   ready: "blue",
   done: "secondary",
   idle: "secondary"
+};
+
+const fmTone: Record<ElfFmTranscriptItem["tone"], "green" | "amber" | "red" | "blue" | "secondary"> = {
+  green: "green",
+  amber: "amber",
+  red: "red",
+  blue: "blue",
+  neutral: "secondary"
 };
 
 const statusDot: Record<RoomStatus, string> = {
@@ -168,6 +181,7 @@ export function App() {
   const [dailyBriefExportStatus, setDailyBriefExportStatus] = useState<string>("");
   const [decisionItems, setDecisionItems] = useState<DecisionItem[]>(buildDecisionItems(seedWorkspace.rooms));
   const [dailyBrief, setDailyBrief] = useState<DailyBrief>(buildDailyBrief(seedWorkspace));
+  const [elfFmFeed, setElfFmFeed] = useState<ElfFmFeed>(buildElfFmFeed(seedWorkspace));
   const [productMemoryById, setProductMemoryById] = useState<Record<string, ProductMemory>>({});
   const [selectedMemorySection, setSelectedMemorySection] = useState<ProductMemorySectionKey>("PRODUCT");
   const [memoryDrafts, setMemoryDrafts] = useState<Record<string, string>>({});
@@ -186,18 +200,24 @@ export function App() {
   useEffect(() => {
     let cancelled = false;
 
-    Promise.all([fetch(`${daemonBaseUrl}/api/workspace`), fetch(`${daemonBaseUrl}/api/needs-me`), fetch(`${daemonBaseUrl}/api/briefs/daily`)])
-      .then(async ([workspaceResponse, needsResponse, briefResponse]) => {
-        if (!workspaceResponse.ok || !needsResponse.ok || !briefResponse.ok) {
-          throw new Error(`Daemon returned ${workspaceResponse.status}/${needsResponse.status}/${briefResponse.status}`);
+    Promise.all([fetch(`${daemonBaseUrl}/api/workspace`), fetch(`${daemonBaseUrl}/api/needs-me`), fetch(`${daemonBaseUrl}/api/briefs/daily`), fetch(`${daemonBaseUrl}/api/fm/feed`)])
+      .then(async ([workspaceResponse, needsResponse, briefResponse, fmResponse]) => {
+        if (!workspaceResponse.ok || !needsResponse.ok || !briefResponse.ok || !fmResponse.ok) {
+          throw new Error(`Daemon returned ${workspaceResponse.status}/${needsResponse.status}/${briefResponse.status}/${fmResponse.status}`);
         }
-        return (await Promise.all([workspaceResponse.json(), needsResponse.json(), briefResponse.json()])) as [WorkspaceSeed, { items: DecisionItem[] }, DailyBrief];
+        return (await Promise.all([workspaceResponse.json(), needsResponse.json(), briefResponse.json(), fmResponse.json()])) as [
+          WorkspaceSeed,
+          { items: DecisionItem[] },
+          DailyBrief,
+          ElfFmFeed
+        ];
       })
-      .then(([nextWorkspace, needsBody, nextBrief]) => {
+      .then(([nextWorkspace, needsBody, nextBrief, nextFmFeed]) => {
         if (!cancelled) {
           setWorkspace(nextWorkspace);
           setDecisionItems(needsBody.items);
           setDailyBrief(nextBrief);
+          setElfFmFeed(nextFmFeed);
           setDaemonState("local");
         }
       })
@@ -206,6 +226,7 @@ export function App() {
           setWorkspace(seedWorkspace);
           setDecisionItems(buildDecisionItems(seedWorkspace.rooms));
           setDailyBrief(buildDailyBrief(seedWorkspace));
+          setElfFmFeed(buildElfFmFeed(seedWorkspace));
           setDaemonState("fallback");
         }
       });
@@ -234,28 +255,31 @@ export function App() {
 
     const refresh = async () => {
       try {
-        const [workspaceResponse, runsResponse, needsResponse, briefResponse] = await Promise.all([
+        const [workspaceResponse, runsResponse, needsResponse, briefResponse, fmResponse] = await Promise.all([
           fetch(`${daemonBaseUrl}/api/workspace`),
           fetch(`${daemonBaseUrl}/api/rooms/${selectedRoomId}/runs`),
           fetch(`${daemonBaseUrl}/api/needs-me`),
-          fetch(`${daemonBaseUrl}/api/briefs/daily`)
+          fetch(`${daemonBaseUrl}/api/briefs/daily`),
+          fetch(`${daemonBaseUrl}/api/fm/feed`)
         ]);
 
-        if (!workspaceResponse.ok || !runsResponse.ok || !needsResponse.ok || !briefResponse.ok) {
+        if (!workspaceResponse.ok || !runsResponse.ok || !needsResponse.ok || !briefResponse.ok || !fmResponse.ok) {
           return;
         }
 
-        const [nextWorkspace, runsBody, needsBody, nextBrief] = (await Promise.all([workspaceResponse.json(), runsResponse.json(), needsResponse.json(), briefResponse.json()])) as [
+        const [nextWorkspace, runsBody, needsBody, nextBrief, nextFmFeed] = (await Promise.all([workspaceResponse.json(), runsResponse.json(), needsResponse.json(), briefResponse.json(), fmResponse.json()])) as [
           WorkspaceSeed,
           { runs: ElfRun[] },
           { items: DecisionItem[] },
-          DailyBrief
+          DailyBrief,
+          ElfFmFeed
         ];
 
         if (!cancelled) {
           setWorkspace(nextWorkspace);
           setDecisionItems(needsBody.items);
           setDailyBrief(nextBrief);
+          setElfFmFeed(nextFmFeed);
           setRoomRuns((current) => ({ ...current, [selectedRoomId]: runsBody.runs }));
         }
       } catch {
@@ -370,7 +394,9 @@ export function App() {
         ...current,
         rooms: current.rooms.map((room) => (room.id === roomId ? body.room : room))
       }));
-      setDailyBrief((current) => buildDailyBrief({ ...workspace, rooms: workspace.rooms.map((room) => (room.id === roomId ? body.room : room)) }, current.generatedAt));
+      const nextWorkspace = { ...workspace, rooms: workspace.rooms.map((room) => (room.id === roomId ? body.room : room)) };
+      setDailyBrief((current) => buildDailyBrief(nextWorkspace, current.generatedAt));
+      setElfFmFeed(buildElfFmFeed(nextWorkspace));
       setRoomNotes((current) => ({ ...current, [roomId]: "" }));
     } catch {
       setWorkspace((current) => ({
@@ -554,6 +580,7 @@ export function App() {
     setWorkspace(body.workspace);
     setDecisionItems(body.needs);
     setDailyBrief(buildDailyBrief(body.workspace));
+    setElfFmFeed(buildElfFmFeed(body.workspace));
     setSelectedRoomId(body.room.id);
     setSelectedProductId(body.room.productId);
     if (note?.trim()) {
@@ -585,6 +612,7 @@ export function App() {
     setWorkspace(body.workspace);
     setDecisionItems(body.needs);
     setDailyBrief(buildDailyBrief(body.workspace));
+    setElfFmFeed(buildElfFmFeed(body.workspace));
     setSelectedRoomId(body.room.id);
     setSelectedProductId(body.room.productId);
     if (note?.trim()) {
@@ -602,6 +630,7 @@ export function App() {
     setWorkspace(body.workspace);
     setDecisionItems(buildDecisionItems(body.workspace.rooms));
     setDailyBrief(buildDailyBrief(body.workspace));
+    setElfFmFeed(buildElfFmFeed(body.workspace));
     setDaemonState("local");
     setNewRoom((current) => ({
       ...current,
@@ -641,6 +670,7 @@ export function App() {
     setWorkspace(body.workspace);
     setDecisionItems(buildDecisionItems(body.workspace.rooms));
     setDailyBrief(buildDailyBrief(body.workspace));
+    setElfFmFeed(buildElfFmFeed(body.workspace));
     setSelectedProductId(body.room.productId);
     setSelectedRoomId(body.room.id);
     setNewRoom((current) => ({ ...current, title: "", acceptanceCriteria: "" }));
@@ -797,6 +827,16 @@ export function App() {
             setIsCreatingRoom(false);
           }}
           onAction={(item, action) => performDecisionAction(item.roomId, action)}
+        />
+
+        <ElfFMPanel
+          feed={elfFmFeed}
+          selectedProductId={selectedProductId}
+          onOpenRoom={(roomId, productId) => {
+            setSelectedProductId(productId);
+            setSelectedRoomId(roomId);
+            setIsCreatingRoom(false);
+          }}
         />
 
         <DailyBriefPanel
@@ -1110,6 +1150,109 @@ function NeedsMePanel({
         <p className="rounded-lg bg-stone-50 px-3 py-2 text-sm text-stone-500">No room currently has an ask, failed run, blocker, or ready review.</p>
       )}
     </section>
+  );
+}
+
+function ElfFMPanel({
+  feed,
+  selectedProductId,
+  onOpenRoom
+}: {
+  feed: ElfFmFeed;
+  selectedProductId: string;
+  onOpenRoom: (roomId: string, productId: string) => void;
+}) {
+  const stations = feed.stations.filter((station) => selectedProductId === "all" || station.productId === selectedProductId);
+  const transcript = feed.transcript.filter((item) => selectedProductId === "all" || item.productId === selectedProductId);
+  const headline = selectedProductId === "all" ? feed.globalStation.nowPlaying : stations[0]?.nowPlaying ?? "No room is broadcasting for this project.";
+
+  return (
+    <section className="mb-4 rounded-xl border border-stone-200 bg-stone-950 p-3 text-stone-50 shadow-sm" aria-label="Elf FM">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <Radio size={18} />
+          <div className="min-w-0">
+            <p className="text-[11px] font-extrabold uppercase text-stone-400">Elf FM</p>
+            <h3 className="truncate text-base font-bold tracking-normal">{headline}</h3>
+          </div>
+        </div>
+        <Badge variant={feed.totals.stuck > 0 ? "red" : feed.totals.asking > 0 ? "amber" : feed.totals.ready > 0 ? "blue" : "green"}>
+          {feed.totals.live} live
+        </Badge>
+      </div>
+
+      <div className="mb-3 grid grid-cols-4 gap-2">
+        <FmMetric label="Asks" value={feed.totals.asking} />
+        <FmMetric label="Ready" value={feed.totals.ready} />
+        <FmMetric label="Stuck" value={feed.totals.stuck} />
+        <FmMetric label="Signals" value={feed.globalStation.evidenceCount} />
+      </div>
+
+      <div className="mb-3 grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-2">
+        {(selectedProductId === "all" ? [feed.globalStation, ...stations.slice(0, 3)] : stations.slice(0, 4)).map((station) => (
+          <FmStationButton station={station} key={station.id} onOpenRoom={onOpenRoom} />
+        ))}
+      </div>
+
+      <div className="grid gap-1.5" aria-label="Elf FM transcript">
+        {transcript.slice(0, 5).map((item) => (
+          <button
+            className="grid gap-1 rounded-lg border border-white/10 bg-white/[0.06] px-2.5 py-2 text-left hover:bg-white/[0.1]"
+            type="button"
+            key={item.id}
+            onClick={() => onOpenRoom(item.roomId, item.productId)}
+          >
+            <span className="flex items-center gap-2 text-[11px] font-extrabold uppercase text-stone-400">
+              <Badge variant={fmTone[item.tone]}>{item.source}</Badge>
+              <span className="truncate">{item.productName}</span>
+              <span className="ml-auto normal-case text-stone-500">{item.time}</span>
+            </span>
+            <span className="text-sm font-bold text-stone-100">{item.title}</span>
+            <span className="line-clamp-2 text-xs leading-5 text-stone-300">{item.body}</span>
+          </button>
+        ))}
+        {transcript.length === 0 ? (
+          <p className="rounded-lg border border-white/10 bg-white/[0.06] px-3 py-2 text-sm text-stone-400">No artifact-backed broadcast items for this project yet.</p>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function FmMetric({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-lg border border-white/10 bg-white/[0.06] px-2 py-1.5">
+      <p className="text-[10px] font-extrabold uppercase text-stone-500">{label}</p>
+      <p className="text-lg font-black leading-6 text-stone-50">{value}</p>
+    </div>
+  );
+}
+
+function FmStationButton({ station, onOpenRoom }: { station: ElfFmStation; onOpenRoom: (roomId: string, productId: string) => void }) {
+  const canOpen = Boolean(station.roomId && station.productId);
+
+  return (
+    <button
+      className={cn(
+        "grid min-h-[104px] gap-2 rounded-lg border border-white/10 bg-white/[0.08] p-3 text-left transition-colors",
+        canOpen ? "hover:bg-white/[0.12]" : "cursor-default"
+      )}
+      type="button"
+      disabled={!canOpen}
+      onClick={() => {
+        if (station.roomId && station.productId) {
+          onOpenRoom(station.roomId, station.productId);
+        }
+      }}
+    >
+      <span className="flex items-center gap-2">
+        <span className={cn("h-2.5 w-2.5 rounded-full", statusDot[station.signal])} />
+        <span className="truncate text-xs font-extrabold uppercase text-stone-400">{station.title}</span>
+        <Badge className="ml-auto" variant={statusTone[station.signal]}>{statusLabels[station.signal]}</Badge>
+      </span>
+      <span className="line-clamp-2 text-sm font-bold leading-5 text-stone-50">{station.nowPlaying}</span>
+      <span className="line-clamp-1 text-xs text-stone-400">{station.subtitle}</span>
+    </button>
   );
 }
 

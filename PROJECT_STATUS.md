@@ -8,7 +8,7 @@ Elves HQ is a local-first founder cockpit for running Codex elves across a produ
 
 **Users:** Sarthak first: an AI-native founder/operator managing many local fleet repos with Codex and adjacent coding agents.
 
-**IN scope for V0:** local product registry, project-wise task list, task rooms, elf assignment/status, room asks, logs, artifacts, captured run prompts, editable local product memory, built-in playbooks, decision actions, fix-request retry context, local daily brief, check gates, CodeVetter review gate adapter, generated worktree cleanup controls, resizable room UI, tasteful elf workbench animation, local-only operation.
+**IN scope for V0:** local product registry, project-wise task list, task rooms, elf assignment/status, room asks, logs, artifacts, captured run prompts, editable local product memory, built-in playbooks, decision actions, fix-request retry context, local daily brief, local Elf FM text stations, check gates, CodeVetter review gate adapter, generated worktree cleanup controls, resizable room UI, tasteful elf workbench animation, local-only operation.
 
 **OUT of scope for V0:** cloud hosting, auth, public API, widgets, billing, production deploys, Telegram, metrics integrations, marketing automation, feedback ingestion, multi-user workspaces, and generic multi-agent adapters.
 
@@ -33,7 +33,7 @@ Elves HQ is a local-first founder cockpit for running Codex elves across a produ
 - 2026-07-06 - Project created as a fresh local-first replacement direction for SaaS Maker's original operating-cockpit ambition.
 - 2026-07-06 - V0 OpenSpec change `local-task-rooms-v0` started.
 - 2026-07-06 - Local daemon and root SQLite store added for persisted workspace/room data and room notes.
-- 2026-07-07 - Task-room creation, explicit elf assignment, isolated worktree runs, interrupted-run recovery, diff capture, captured prompts, editable local product memory, built-in playbooks, structured elf asks and founder answers, focused room mode, room workbench tabs, room transcripts, fix-request retry context, local Daily Brief with Markdown export, check gates, CodeVetter gate adapter, generated worktree cleanup, visible room gate checklist, persistent pane layout controls, a signal-backed Needs Me queue, founder decision actions, and approval guards for failed or missing gates landed in the local cockpit.
+- 2026-07-07 - Task-room creation, explicit elf assignment, isolated worktree runs, interrupted-run recovery, diff capture, captured prompts, editable local product memory, built-in playbooks, structured elf asks and founder answers, focused room mode, room workbench tabs, room transcripts, fix-request retry context, local Daily Brief with Markdown export, local Elf FM text stations, check gates, CodeVetter gate adapter, generated worktree cleanup, visible room gate checklist, persistent pane layout controls, a signal-backed Needs Me queue, founder decision actions, and approval guards for failed or missing gates landed in the local cockpit.
 
 ## Products
 
@@ -44,7 +44,7 @@ Elves HQ is a local-first founder cockpit for running Codex elves across a produ
 ## Features (shipped)
 
 - Initial V0 local cockpit scaffold with seeded project/task-room data.
-- Local daemon exposes `GET /api/health`, `GET /api/workspace`, `GET /api/needs-me`, `GET /api/briefs/daily`, `GET /api/briefs/daily.md`, `GET /api/products/:id/memory`, `POST /api/products/:id/memory/:section`, `POST /api/rooms`, `POST /api/rooms/:id/notes`, `POST /api/rooms/:id/decision`, `POST /api/rooms/:id/asks/:askId/answer`, `GET /api/rooms/:id/runs`, `POST /api/rooms/:id/runs/start`, `POST /api/rooms/:id/transcript`, `GET /api/rooms/:id/transcript`, `GET /api/runs/:id/prompt`, and `POST /api/runs/:id/kill`.
+- Local daemon exposes `GET /api/health`, `GET /api/workspace`, `GET /api/needs-me`, `GET /api/briefs/daily`, `GET /api/briefs/daily.md`, `GET /api/fm/feed`, `GET /api/products/:id/memory`, `POST /api/products/:id/memory/:section`, `POST /api/rooms`, `POST /api/rooms/:id/notes`, `POST /api/rooms/:id/decision`, `POST /api/rooms/:id/asks/:askId/answer`, `GET /api/rooms/:id/runs`, `POST /api/rooms/:id/runs/start`, `POST /api/rooms/:id/transcript`, `GET /api/rooms/:id/transcript`, `GET /api/runs/:id/prompt`, and `POST /api/runs/:id/kill`.
 - SQLite persistence stores projects, elves, tasks, rooms, logs, asks, artifacts, decisions, and notes in ignored local `data/elves.db`.
 - Room runs support local dry runs and read-only Codex inspection, stream stdout/stderr into room logs, persist run records, support kill, and enforce a default runtime cap.
 - Daemon startup reconciles persisted `running` runs as interrupted failures with warning logs, so restarted local sessions do not show fake active work.
@@ -70,6 +70,7 @@ Elves HQ is a local-first founder cockpit for running Codex elves across a produ
 - Needs Me queue aggregates founder decisions from room asks, blocked/failed runs, failed gates, and ready artifacts via `GET /api/needs-me`.
 - Daily Brief summarizes shipped, ready, blocked, failed, active, and recommended next actions from existing room signals via `GET /api/briefs/daily`.
 - Daily Brief can be exported as Markdown via `GET /api/briefs/daily.md`, previewed in the cockpit, and copied when browser clipboard access is available.
+- Elf FM exposes local station-style ambient awareness via `GET /api/fm/feed`, with an all-rooms mix, room stations, and transcript lines backed by asks, artifacts, decisions, logs, or status signals.
 - Founder decision actions approve, request fix, reject, snooze, and retry rooms with persisted decision records and queue updates.
 
 ## Todo / Planned / Deferred / Blocked
@@ -79,6 +80,7 @@ Elves HQ is a local-first founder cockpit for running Codex elves across a produ
 ### Deferred
 
 - Telegram escalation.
+- Generated Elf FM audio narration.
 - Metrics, feedback, marketing, and portfolio recommendation layers.
 - Cloud sync or hosted SaaS mode.
 

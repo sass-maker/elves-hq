@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import {
   buildDecisionItems,
   buildDailyBrief,
+  buildElfFmFeed,
   builtInPlaybooks,
   getApprovalBlockers,
   getBlockingArtifacts,
@@ -17,6 +18,7 @@ import {
   type DecisionAction,
   type DecisionItem,
   type Elf,
+  type ElfFmFeed,
   type ElfRun,
   type Playbook,
   type Product,
@@ -184,6 +186,10 @@ export class WorkspaceStore {
       brief,
       markdown: renderDailyBriefMarkdown(brief)
     };
+  }
+
+  getElfFmFeed(): ElfFmFeed {
+    return buildElfFmFeed(this.getWorkspace());
   }
 
   generateRoomTranscript(roomId: string): { roomId: string; outputPath: string; transcript: string; room: Room } {

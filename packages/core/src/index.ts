@@ -125,6 +125,47 @@ export interface DailyBrief {
   recommendedNext: DailyBriefRecommendation[];
 }
 
+export type ElfFmSource = "ask" | "artifact" | "decision" | "log" | "status";
+
+export interface ElfFmStation {
+  id: string;
+  kind: "global" | "room";
+  title: string;
+  subtitle: string;
+  nowPlaying: string;
+  signal: RoomStatus;
+  productId: string | null;
+  roomId: string | null;
+  evidenceCount: number;
+  updatedAt: string;
+}
+
+export interface ElfFmTranscriptItem {
+  id: string;
+  roomId: string;
+  productId: string;
+  productName: string;
+  roomTitle: string;
+  source: ElfFmSource;
+  tone: "green" | "amber" | "red" | "blue" | "neutral";
+  title: string;
+  body: string;
+  time: string;
+}
+
+export interface ElfFmFeed {
+  generatedAt: string;
+  globalStation: ElfFmStation;
+  stations: ElfFmStation[];
+  transcript: ElfFmTranscriptItem[];
+  totals: {
+    live: number;
+    asking: number;
+    ready: number;
+    stuck: number;
+  };
+}
+
 export type ProductMemorySectionKey = "PRODUCT" | "STRATEGY" | "ARCHITECTURE" | "DECISIONS" | "DO_NOT_DO" | "RECENT_LEARNINGS";
 
 export interface ProductMemorySectionDefinition {
@@ -505,6 +546,58 @@ export function renderDailyBriefMarkdown(brief: DailyBrief): string {
   return `${lines.join("\n")}\n`;
 }
 
+export function buildElfFmFeed(workspace: WorkspaceSeed, generatedAt = new Date().toISOString()): ElfFmFeed {
+  const productsById = new Map(workspace.products.map((product) => [product.id, product]));
+  const liveRooms = workspace.rooms.filter((room) => room.status !== "idle" && room.status !== "done");
+  const sortedRooms = [...liveRooms].sort((a, b) => fmStatusRank(a.status) - fmStatusRank(b.status) || compareTimeDesc(a.lastActivityAt, b.lastActivityAt));
+  const asking = workspace.rooms.filter((room) => room.status === "asking" || room.asks.length > 0).length;
+  const ready = workspace.rooms.filter((room) => room.status === "ready" || room.artifacts.some((artifact) => artifact.status === "ready" || artifact.status === "passed")).length;
+  const stuck = workspace.rooms.filter((room) => room.status === "blocked" || room.status === "failed" || getBlockingArtifacts(room).length > 0).length;
+  const globalStation: ElfFmStation = {
+    id: "station-global",
+    kind: "global",
+    title: "All Rooms FM",
+    subtitle: `${liveRooms.length} live rooms · ${asking} asking · ${ready} ready · ${stuck} stuck`,
+    nowPlaying: fmGlobalNowPlaying(sortedRooms),
+    signal: stuck > 0 ? "failed" : asking > 0 ? "asking" : ready > 0 ? "ready" : liveRooms.length > 0 ? "working" : "idle",
+    productId: null,
+    roomId: null,
+    evidenceCount: workspace.rooms.reduce((sum, room) => sum + fmEvidenceCount(room), 0),
+    updatedAt: generatedAt
+  };
+
+  const stations = sortedRooms.slice(0, 12).map((room): ElfFmStation => {
+    const product = productsById.get(room.productId);
+    return {
+      id: `station-${room.id}`,
+      kind: "room",
+      title: product?.name ?? "Unknown project",
+      subtitle: room.title,
+      nowPlaying: fmNowPlaying(room),
+      signal: room.status,
+      productId: room.productId,
+      roomId: room.id,
+      evidenceCount: fmEvidenceCount(room),
+      updatedAt: room.lastActivityAt
+    };
+  });
+
+  const transcript = sortedRooms.flatMap((room) => fmTranscriptForRoom(room, productsById.get(room.productId)?.name ?? "Unknown project")).slice(0, 24);
+
+  return {
+    generatedAt,
+    globalStation,
+    stations,
+    transcript,
+    totals: {
+      live: liveRooms.length,
+      asking,
+      ready,
+      stuck
+    }
+  };
+}
+
 function briefItem(room: Room, productName: string): DailyBriefItem {
   const artifactEvidence = room.artifacts.slice(-3).map((artifact) => `${artifact.title}: ${artifact.summary}`);
   const askEvidence = room.asks.slice(0, 1).map((ask) => `Ask: ${ask.question}`);
@@ -522,6 +615,154 @@ function briefItem(room: Room, productName: string): DailyBriefItem {
     status: room.status,
     evidence: evidence.length > 0 ? evidence : [room.summary]
   };
+}
+
+function fmEvidenceCount(room: Room): number {
+  return room.logs.length + room.asks.length + room.artifacts.length + room.decisions.length;
+}
+
+function fmStatusRank(status: RoomStatus): number {
+  const order: Record<RoomStatus, number> = {
+    asking: 0,
+    failed: 1,
+    blocked: 2,
+    ready: 3,
+    working: 4,
+    idle: 5,
+    done: 6
+  };
+  return order[status];
+}
+
+function compareTimeDesc(a: string, b: string): number {
+  const parsedA = Date.parse(a);
+  const parsedB = Date.parse(b);
+  if (Number.isFinite(parsedA) && Number.isFinite(parsedB)) {
+    return parsedB - parsedA;
+  }
+  return b.localeCompare(a);
+}
+
+function fmGlobalNowPlaying(rooms: Room[]): string {
+  const head = rooms[0];
+  if (!head) {
+    return "The workshop is quiet. No elf room is currently broadcasting.";
+  }
+  return `${statusLabels[head.status]}: ${head.title}`;
+}
+
+function fmNowPlaying(room: Room): string {
+  const ask = room.asks[0];
+  if (ask) {
+    return `Founder call: ${ask.question}`;
+  }
+  const failedArtifact = getBlockingArtifacts(room)[0];
+  if (failedArtifact) {
+    return `Gate trouble: ${failedArtifact.title}`;
+  }
+  const readyArtifact = findLastArtifact(room.artifacts, (artifact) => artifact.status === "ready" || artifact.status === "passed");
+  if (readyArtifact) {
+    return `Artifact ready: ${readyArtifact.title}`;
+  }
+  const latestLog = room.logs.at(-1);
+  if (latestLog) {
+    return latestLog.message;
+  }
+  return room.summary;
+}
+
+function fmTranscriptForRoom(room: Room, productName: string): ElfFmTranscriptItem[] {
+  const items: ElfFmTranscriptItem[] = [];
+  const ask = room.asks[0];
+  if (ask) {
+    items.push({
+      id: `fm-${room.id}-${ask.id}`,
+      roomId: room.id,
+      productId: room.productId,
+      productName,
+      roomTitle: room.title,
+      source: "ask",
+      tone: "amber",
+      title: "Elf asks",
+      body: `${ask.question} Recommendation: ${ask.recommendation}`,
+      time: ask.createdAt
+    });
+  }
+
+  const artifact = room.artifacts.at(-1);
+  if (artifact) {
+    items.push({
+      id: `fm-${room.id}-${artifact.id}`,
+      roomId: room.id,
+      productId: room.productId,
+      productName,
+      roomTitle: room.title,
+      source: "artifact",
+      tone: artifact.status === "failed" ? "red" : artifact.status === "ready" ? "blue" : artifact.status === "passed" ? "green" : "neutral",
+      title: artifact.title,
+      body: artifact.summary,
+      time: room.lastActivityAt
+    });
+  }
+
+  const decision = room.decisions.at(-1);
+  if (decision) {
+    items.push({
+      id: `fm-${room.id}-${decision.id}`,
+      roomId: room.id,
+      productId: room.productId,
+      productName,
+      roomTitle: room.title,
+      source: "decision",
+      tone: decision.status === "approved" ? "green" : decision.status === "rejected" ? "red" : decision.status === "requested_fix" ? "amber" : "neutral",
+      title: `Decision ${decision.status.replace("_", " ")}`,
+      body: decision.title,
+      time: room.lastActivityAt
+    });
+  }
+
+  const log = room.logs.at(-1);
+  if (log) {
+    items.push({
+      id: `fm-${room.id}-${log.id}`,
+      roomId: room.id,
+      productId: room.productId,
+      productName,
+      roomTitle: room.title,
+      source: "log",
+      tone: log.level === "error" ? "red" : log.level === "warning" ? "amber" : log.level === "success" ? "green" : "neutral",
+      title: `${log.level} log`,
+      body: log.message,
+      time: log.time
+    });
+  }
+
+  if (items.length === 0) {
+    items.push({
+      id: `fm-${room.id}-status`,
+      roomId: room.id,
+      productId: room.productId,
+      productName,
+      roomTitle: room.title,
+      source: "status",
+      tone: room.status === "working" ? "green" : room.status === "ready" ? "blue" : room.status === "asking" ? "amber" : room.status === "failed" || room.status === "blocked" ? "red" : "neutral",
+      title: statusLabels[room.status],
+      body: room.summary,
+      time: room.lastActivityAt
+    });
+  }
+
+  return items.sort((a, b) => compareTimeDesc(a.time, b.time));
+}
+
+function findLastArtifact(artifacts: Artifact[], predicate: (artifact: Artifact) => boolean): Artifact | undefined {
+  for (let index = artifacts.length - 1; index >= 0; index -= 1) {
+    const artifact = artifacts[index];
+    if (predicate(artifact)) {
+      return artifact;
+    }
+  }
+  return undefined;
 }
 
 export const seedWorkspace: WorkspaceSeed = {
