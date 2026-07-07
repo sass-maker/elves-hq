@@ -14,6 +14,28 @@ export interface Product {
   currentGoal: string;
 }
 
+export interface ProductScript {
+  name: string;
+  command: string;
+  gate: boolean;
+}
+
+export interface ProductFolderInspection {
+  productId: string;
+  productName: string;
+  localPath: string;
+  resolvedPath: string;
+  exists: boolean;
+  isDirectory: boolean;
+  isGitRepo: boolean;
+  gitRoot: string | null;
+  packageJsonExists: boolean;
+  packageManager: "pnpm" | "npm" | "yarn" | "bun" | "unknown";
+  scripts: ProductScript[];
+  checkedAt: string;
+  warnings: string[];
+}
+
 export interface Elf {
   id: string;
   name: string;

@@ -101,6 +101,12 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    const productInspectionMatch = url.pathname.match(/^\/api\/products\/([^/]+)\/inspection$/);
+    if (request.method === "GET" && productInspectionMatch) {
+      sendJson(response, 200, store.inspectProductFolder(productInspectionMatch[1]));
+      return;
+    }
+
     const productMemorySectionMatch = url.pathname.match(/^\/api\/products\/([^/]+)\/memory\/([^/]+)$/);
     if (request.method === "POST" && productMemorySectionMatch) {
       const body = await readJson(request);

@@ -12,6 +12,7 @@ import {
   GripVertical,
   Hammer,
   HelpCircle,
+  Folder,
   Maximize2,
   MessageSquare,
   Minimize2,
@@ -44,6 +45,7 @@ import {
   type ElfRun,
   type Playbook,
   type Product,
+  type ProductFolderInspection,
   type ProductMemory,
   type ProductMemorySection,
   type ProductMemorySectionKey,
@@ -182,6 +184,7 @@ export function App() {
   const [decisionItems, setDecisionItems] = useState<DecisionItem[]>(buildDecisionItems(seedWorkspace.rooms));
   const [dailyBrief, setDailyBrief] = useState<DailyBrief>(buildDailyBrief(seedWorkspace));
   const [elfFmFeed, setElfFmFeed] = useState<ElfFmFeed>(buildElfFmFeed(seedWorkspace));
+  const [productInspections, setProductInspections] = useState<Record<string, ProductFolderInspection>>({});
   const [productMemoryById, setProductMemoryById] = useState<Record<string, ProductMemory>>({});
   const [selectedMemorySection, setSelectedMemorySection] = useState<ProductMemorySectionKey>("PRODUCT");
   const [memoryDrafts, setMemoryDrafts] = useState<Record<string, string>>({});
@@ -314,6 +317,8 @@ export function App() {
   const visibleRoomCards = visibleRooms.slice(0, 6);
 
   const selectedRoom = workspace.rooms.find((room) => room.id === selectedRoomId) ?? visibleRooms[0] ?? workspace.rooms[0];
+  const selectedProduct = workspace.products.find((product) => product.id === (selectedProductId === "all" ? selectedRoom?.productId : selectedProductId));
+  const selectedProductInspection = selectedProduct ? productInspections[selectedProduct.id] : undefined;
   const selectedProductMemory = selectedRoom ? productMemoryById[selectedRoom.productId] : undefined;
   const selectedMemoryDraftKey = selectedRoom ? `${selectedRoom.productId}:${selectedMemorySection}` : "";
   const selectedMemorySectionBody =
@@ -370,6 +375,34 @@ export function App() {
       cancelled = true;
     };
   }, [daemonState, selectedRoom?.productId]);
+
+  useEffect(() => {
+    if (daemonState !== "local" || !selectedProduct?.id) {
+      return;
+    }
+
+    let cancelled = false;
+
+    fetch(`${daemonBaseUrl}/api/products/${selectedProduct.id}/inspection`)
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(`Daemon returned ${response.status}`);
+        }
+        return (await response.json()) as ProductFolderInspection;
+      })
+      .then((inspection) => {
+        if (!cancelled) {
+          setProductInspections((current) => ({ ...current, [inspection.productId]: inspection }));
+        }
+      })
+      .catch(() => {
+        // Folder inspection is advisory; room workflows remain usable without it.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [daemonState, selectedProduct?.id]);
 
   useEffect(() => {
     window.localStorage.setItem(paneLayoutStorageKey, JSON.stringify(paneLayout));
@@ -682,6 +715,11 @@ export function App() {
       assignedElfId: body.workspace.elves.some((elf) => elf.id === current.assignedElfId) ? current.assignedElfId : defaultRoomElfId(body.workspace)
     }));
     setNewProduct({ name: "", localPath: "", currentGoal: "" });
+    setProductInspections((current) => {
+      const next = { ...current };
+      delete next[body.product.id];
+      return next;
+    });
     setIsAddingProduct(false);
   };
 
@@ -827,6 +865,8 @@ export function App() {
             </Button>
           </section>
         ) : null}
+
+        {selectedProduct ? <ProductFolderCard product={selectedProduct} inspection={selectedProductInspection} /> : null}
 
         <div className="mt-2 grid gap-2">
           {workspace.products.map((product) => {
@@ -1475,6 +1515,56 @@ function ProjectButton({
       </span>
       <span className="grid h-8 min-w-8 place-items-center rounded-md bg-stone-100 px-2 text-sm font-bold">{count}</span>
     </button>
+  );
+}
+
+function ProductFolderCard({ product, inspection }: { product: Product; inspection?: ProductFolderInspection }) {
+  const healthy = inspection?.exists && inspection.isDirectory && inspection.isGitRepo;
+  const gateScripts = inspection?.scripts.filter((script) => script.gate).slice(0, 4) ?? [];
+
+  return (
+    <section className="mt-3 rounded-lg border border-stone-800 bg-stone-900/70 p-3" aria-label="Product folder health">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <Folder size={15} className="shrink-0 text-stone-400" />
+          <div className="min-w-0">
+            <p className="text-[10px] font-extrabold uppercase text-stone-500">Folder</p>
+            <p className="truncate text-xs font-bold text-stone-200">{product.name}</p>
+          </div>
+        </div>
+        <Badge variant={!inspection ? "secondary" : healthy ? "green" : "amber"}>{!inspection ? "Checking" : healthy ? "Ready" : "Needs check"}</Badge>
+      </div>
+      <p className="break-words rounded-md bg-stone-950 px-2 py-1.5 text-[11px] leading-4 text-stone-400">{inspection?.resolvedPath ?? product.localPath}</p>
+      {inspection ? (
+        <div className="mt-2 grid gap-2">
+          <div className="grid grid-cols-3 gap-1.5">
+            <FolderSignal label="Path" ok={inspection.exists && inspection.isDirectory} />
+            <FolderSignal label="Git" ok={inspection.isGitRepo} />
+            <FolderSignal label={inspection.packageManager === "unknown" ? "Pkg" : inspection.packageManager} ok={inspection.packageJsonExists} />
+          </div>
+          {gateScripts.length > 0 ? (
+            <div className="flex flex-wrap gap-1">
+              {gateScripts.map((script) => (
+                <Badge variant="outline" key={script.name}>{script.name}</Badge>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-stone-500">No check/typecheck/test/build script detected.</p>
+          )}
+          {inspection.warnings.length > 0 ? (
+            <p className="text-xs leading-5 text-amber-300">{inspection.warnings[0]}</p>
+          ) : null}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function FolderSignal({ label, ok }: { label: string; ok: boolean }) {
+  return (
+    <div className={cn("rounded-md border px-2 py-1 text-center text-[11px] font-bold", ok ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200" : "border-amber-500/30 bg-amber-500/10 text-amber-200")}>
+      {label}
+    </div>
   );
 }
 

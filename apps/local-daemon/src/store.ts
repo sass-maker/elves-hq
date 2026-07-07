@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync, realpathSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { spawnSync } from "node:child_process";
+import { dirname, isAbsolute, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import {
@@ -22,6 +23,7 @@ import {
   type ElfRun,
   type Playbook,
   type Product,
+  type ProductFolderInspection,
   type ProductMemory,
   type ProductMemorySection,
   type ProductMemorySectionKey,
@@ -33,6 +35,7 @@ import {
 } from "@elves-hq/core";
 
 const databasePath = fileURLToPath(new URL("../../../data/elves.db", import.meta.url));
+const projectRoot = fileURLToPath(new URL("../../../", import.meta.url));
 const memoryRoot = fileURLToPath(new URL("../../../memory/", import.meta.url));
 const transcriptsRoot = fileURLToPath(new URL("../../../runs/room-transcripts/", import.meta.url));
 
@@ -281,6 +284,11 @@ export class WorkspaceStore {
       throw new Error(`Product not found: ${productId}`);
     }
     return product;
+  }
+
+  inspectProductFolder(productId: string): ProductFolderInspection {
+    const product = this.getProduct(productId);
+    return inspectProduct(product);
   }
 
   createProduct(input: CreateProductInput): Product {
@@ -990,6 +998,93 @@ function normalizeLocalPath(localPath: string) {
   } catch {
     return expanded;
   }
+}
+
+function inspectProduct(product: Product): ProductFolderInspection {
+  const resolvedPath = resolveProductPath(product.localPath);
+  const warnings: string[] = [];
+  const exists = existsSync(resolvedPath);
+  const isDirectory = exists ? statSync(resolvedPath).isDirectory() : false;
+  if (!exists) {
+    warnings.push("Folder path does not exist.");
+  } else if (!isDirectory) {
+    warnings.push("Path exists but is not a directory.");
+  }
+
+  const gitResult = exists && isDirectory ? spawnSync("git", ["-C", resolvedPath, "rev-parse", "--show-toplevel"], { encoding: "utf8" }) : undefined;
+  const isGitRepo = gitResult?.status === 0;
+  const gitRoot = isGitRepo ? gitResult?.stdout.trim() || null : null;
+  if (exists && isDirectory && !isGitRepo) {
+    warnings.push("Folder is not a git repository; worktree-backed elf runs will fail.");
+  }
+
+  const packageJsonPath = resolve(resolvedPath, "package.json");
+  const packageJsonExists = exists && isDirectory && existsSync(packageJsonPath);
+  const packageJson = packageJsonExists ? readPackageJson(packageJsonPath, warnings) : undefined;
+  if (exists && isDirectory && !packageJsonExists) {
+    warnings.push("No package.json found; automatic check script detection is unavailable.");
+  }
+
+  const scripts = Object.entries(packageJson?.scripts ?? {})
+    .filter((entry): entry is [string, string] => typeof entry[1] === "string")
+    .sort(([a], [b]) => scriptSortRank(a) - scriptSortRank(b) || a.localeCompare(b))
+    .map(([name, command]) => ({
+      name,
+      command,
+      gate: name === "check" || name === "typecheck" || name === "test" || name === "build"
+    }));
+
+  return {
+    productId: product.id,
+    productName: product.name,
+    localPath: product.localPath,
+    resolvedPath,
+    exists,
+    isDirectory,
+    isGitRepo,
+    gitRoot,
+    packageJsonExists,
+    packageManager: detectPackageManager(resolvedPath, packageJson?.packageManager),
+    scripts,
+    checkedAt: new Date().toISOString(),
+    warnings
+  };
+}
+
+function resolveProductPath(localPath: string) {
+  const expanded = localPath.startsWith("~/") ? `${process.env.HOME ?? "~"}${localPath.slice(1)}` : localPath;
+  return isAbsolute(expanded) ? expanded : resolve(projectRoot, expanded);
+}
+
+function readPackageJson(packageJsonPath: string, warnings: string[]) {
+  try {
+    return JSON.parse(readFileSync(packageJsonPath, "utf8")) as { packageManager?: string; scripts?: Record<string, unknown> };
+  } catch {
+    warnings.push("package.json could not be parsed.");
+    return undefined;
+  }
+}
+
+function detectPackageManager(resolvedPath: string, packageManager: string | undefined): ProductFolderInspection["packageManager"] {
+  if (packageManager?.startsWith("pnpm") || existsSync(resolve(resolvedPath, "pnpm-lock.yaml"))) {
+    return "pnpm";
+  }
+  if (packageManager?.startsWith("yarn") || existsSync(resolve(resolvedPath, "yarn.lock"))) {
+    return "yarn";
+  }
+  if (packageManager?.startsWith("bun") || existsSync(resolve(resolvedPath, "bun.lockb")) || existsSync(resolve(resolvedPath, "bun.lock"))) {
+    return "bun";
+  }
+  if (packageManager?.startsWith("npm") || existsSync(resolve(resolvedPath, "package-lock.json"))) {
+    return "npm";
+  }
+  return "unknown";
+}
+
+function scriptSortRank(name: string) {
+  const order = ["check", "typecheck", "test", "build", "dev"];
+  const index = order.indexOf(name);
+  return index === -1 ? order.length : index;
 }
 
 function safePathSegment(value: string) {
