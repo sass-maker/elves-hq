@@ -45,7 +45,7 @@ export class RoomProcessManager {
     }
     const command = this.buildCommandDescription(product.localPath, task.title, options);
     const founderPrompt = options.prompt?.trim();
-    const prompt = founderPrompt || buildRoomRunPrompt(room, product, task, memory, playbook, options.mode);
+    const prompt = buildRoomRunPrompt(room, product, task, memory, playbook, options.mode, founderPrompt);
     const runOptions = { ...options, prompt, simulatedOutput: options.mode === "dry-run" ? founderPrompt : undefined };
     const run = this.store.createRun(room.id, options.mode, command);
     this.captureRunPrompt(run, prompt);
@@ -587,7 +587,7 @@ export class RoomProcessManager {
   }
 }
 
-function buildRoomRunPrompt(room: Room, product: Product, task: Task, memory: ProductMemory, playbook: Playbook | undefined, mode: ElfRun["mode"]) {
+function buildRoomRunPrompt(room: Room, product: Product, task: Task, memory: ProductMemory, playbook: Playbook | undefined, mode: ElfRun["mode"], founderPrompt?: string) {
   const acceptance = task.acceptanceCriteria.length > 0 ? task.acceptanceCriteria.map((item) => `- ${item}`).join("\n") : "- No acceptance criteria recorded.";
   const memoryText = memory.sections
     .filter((section) => section.body.trim().length > 0)
@@ -652,6 +652,9 @@ function buildRoomRunPrompt(room: Room, product: Product, task: Task, memory: Pr
     "## Playbook",
     playbookText,
     "",
+    "## Founder Instructions For This Run",
+    founderPrompt || "No one-off run instructions provided.",
+    "",
     "## Founder Notes And Fix Requests",
     notes,
     "",
@@ -666,7 +669,7 @@ function buildRoomRunPrompt(room: Room, product: Product, task: Task, memory: Pr
     "",
     "## Instructions",
     modeInstruction,
-    "Use the founder notes and requested-fix context as the highest-priority room guidance after the acceptance criteria.",
+    "Use the one-off founder instructions, founder notes, and requested-fix context as the highest-priority room guidance after the acceptance criteria.",
     'If you need founder judgment, print one complete line exactly like: ELF_ASK: {"question":"...","options":["Option A","Option B"],"recommendation":"..."}. Use this only for decisions the founder actually needs to make.',
     "Return a concise status update with concrete files changed, commands run, blockers, and remaining founder decisions."
   ].join("\n");

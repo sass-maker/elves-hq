@@ -281,6 +281,7 @@ export function App() {
   const [roomSignalFilter, setRoomSignalFilter] = useState<RoomSignalFilter>("all");
   const [roomSortOrder, setRoomSortOrder] = useState<RoomSortOrder>("priority");
   const [roomWorkbenchTabsById, setRoomWorkbenchTabsById] = useState<Record<string, RoomWorkbenchTab>>({});
+  const [runInstructionsByRoomId, setRunInstructionsByRoomId] = useState<Record<string, string>>({});
   const [focusedRoomId, setFocusedRoomId] = useState<string | null>(null);
   const [roomDeckPage, setRoomDeckPage] = useState(0);
   const [roomDeckScope, setRoomDeckScope] = useState<RoomDeckScope>("active");
@@ -685,13 +686,14 @@ export function App() {
     }));
   };
 
-  const startRoomRun = async (roomId: string, mode: ElfRun["mode"]) => {
+  const startRoomRun = async (roomId: string, mode: ElfRun["mode"], prompt?: string) => {
+    const trimmedPrompt = prompt?.trim();
     const response = await fetch(`${daemonBaseUrl}/api/rooms/${roomId}/runs/start`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ mode })
+      body: JSON.stringify({ mode, ...(trimmedPrompt ? { prompt: trimmedPrompt } : {}) })
     });
 
     if (!response.ok) {
@@ -701,6 +703,11 @@ export function App() {
     const body = (await response.json()) as { room: Room; run: ElfRun };
     replaceRoom(body.room);
     setRoomRuns((current) => ({ ...current, [roomId]: [body.run, ...(current[roomId] ?? [])] }));
+    setRunInstructionsByRoomId((current) => {
+      const next = { ...current };
+      delete next[roomId];
+      return next;
+    });
   };
 
   const killLatestRun = async (roomId: string) => {
@@ -1537,16 +1544,18 @@ export function App() {
           memoryDraft={selectedMemorySectionBody}
           activeWorkbenchTab={selectedRoomWorkbenchTab}
           isFocused={isRoomFocused}
+          runInstructionDraft={runInstructionsByRoomId[selectedRoom.id] ?? ""}
           onSelectMemorySection={setSelectedMemorySection}
           onMemoryDraftChange={(value) => setMemoryDrafts((current) => ({ ...current, [selectedMemoryDraftKey]: value }))}
           onSaveMemory={(section, body) => saveProductMemorySection(selectedRoom.productId, section, body)}
           onSelectWorkbenchTab={(tab) => setRoomWorkbenchTabsById((current) => ({ ...current, [selectedRoom.id]: tab }))}
+          onRunInstructionDraftChange={(value) => setRunInstructionsByRoomId((current) => ({ ...current, [selectedRoom.id]: value }))}
           noteDraft={roomNotes[selectedRoom.id] ?? ""}
           onNoteDraftChange={(value) => setRoomNotes((current) => ({ ...current, [selectedRoom.id]: value }))}
           onSaveNote={() => saveRoomNote(selectedRoom.id)}
-          onStartDryRun={() => startRoomRun(selectedRoom.id, "dry-run")}
-          onStartCodexReadOnly={() => startRoomRun(selectedRoom.id, "codex-readonly")}
-          onStartMode={(mode) => startRoomRun(selectedRoom.id, mode)}
+          onStartDryRun={(prompt) => startRoomRun(selectedRoom.id, "dry-run", prompt)}
+          onStartCodexReadOnly={(prompt) => startRoomRun(selectedRoom.id, "codex-readonly", prompt)}
+          onStartMode={(mode, prompt) => startRoomRun(selectedRoom.id, mode, prompt)}
           onOpenPrompt={() => openLatestPrompt(selectedRoom.id)}
           onOpenDiff={() => openLatestDiff(selectedRoom.id)}
           onRunCheck={() => runLatestCheck(selectedRoom.id)}
@@ -2766,10 +2775,12 @@ function RoomDetail({
   memoryDraft,
   activeWorkbenchTab,
   isFocused,
+  runInstructionDraft,
   onSelectMemorySection,
   onMemoryDraftChange,
   onSaveMemory,
   onSelectWorkbenchTab,
+  onRunInstructionDraftChange,
   noteDraft,
   onNoteDraftChange,
   onSaveNote,
@@ -2806,16 +2817,18 @@ function RoomDetail({
   memoryDraft: string;
   activeWorkbenchTab: RoomWorkbenchTab;
   isFocused: boolean;
+  runInstructionDraft: string;
   onSelectMemorySection: (section: ProductMemorySectionKey) => void;
   onMemoryDraftChange: (value: string) => void;
   onSaveMemory: (section: ProductMemorySectionKey, body: string) => void;
   onSelectWorkbenchTab: (tab: RoomWorkbenchTab) => void;
+  onRunInstructionDraftChange: (value: string) => void;
   noteDraft: string;
   onNoteDraftChange: (value: string) => void;
   onSaveNote: () => void;
-  onStartDryRun: () => void;
-  onStartCodexReadOnly: () => void;
-  onStartMode: (mode: ElfRun["mode"]) => void;
+  onStartDryRun: (prompt?: string) => void;
+  onStartCodexReadOnly: (prompt?: string) => void;
+  onStartMode: (mode: ElfRun["mode"], prompt?: string) => void;
   onOpenPrompt: () => void;
   onOpenDiff: () => void;
   onRunCheck: () => void;
@@ -2836,6 +2849,7 @@ function RoomDetail({
   const ask = room.asks[0];
   const activeRun = runs.find((run) => run.status === "running");
   const decisionNote = noteDraft.trim() || undefined;
+  const runInstructions = runInstructionDraft.trim() || undefined;
   const activeMemorySection = productMemory?.sections.find((section) => section.key === selectedMemorySection);
   const gateChecklist = buildGateChecklist(room);
   const readOnlyBlocker = productInspection && (!productInspection.exists || !productInspection.isDirectory) ? "Product folder is missing or is not a directory." : undefined;
@@ -2905,11 +2919,21 @@ function RoomDetail({
               {worktreeBlocker ?? readOnlyBlocker}
             </div>
           ) : null}
+          <label className="mb-3 grid gap-1 text-xs font-extrabold uppercase text-stone-500">
+            Next run instructions
+            <Textarea
+              className="min-h-20 text-sm normal-case"
+              value={runInstructionDraft}
+              onChange={(event) => onRunInstructionDraftChange(event.target.value)}
+              placeholder="Focus on one failing check. Do not touch unrelated files."
+              rows={3}
+            />
+          </label>
           <div className="grid grid-cols-3 gap-2">
-            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onStartDryRun}><Play size={15} />Dry</Button>
-            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onStartCodexReadOnly} disabled={Boolean(readOnlyBlocker)}><SquareTerminal size={15} />Read</Button>
-            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onStartMode("worktree-dry-run")} disabled={Boolean(worktreeBlocker)}><GitBranch size={15} />Draft</Button>
-            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onStartMode("codex-worktree")} disabled={Boolean(worktreeBlocker)}><Hammer size={15} />Build</Button>
+            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onStartDryRun(runInstructions)}><Play size={15} />Dry</Button>
+            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onStartCodexReadOnly(runInstructions)} disabled={Boolean(readOnlyBlocker)}><SquareTerminal size={15} />Read</Button>
+            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onStartMode("worktree-dry-run", runInstructions)} disabled={Boolean(worktreeBlocker)}><GitBranch size={15} />Draft</Button>
+            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onStartMode("codex-worktree", runInstructions)} disabled={Boolean(worktreeBlocker)}><Hammer size={15} />Build</Button>
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onOpenPrompt}><ScrollText size={15} />Prompt</Button>
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onGenerateTranscript}><FileText size={15} />Doc</Button>
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onOpenDiff}><GitBranch size={15} />Diff</Button>
