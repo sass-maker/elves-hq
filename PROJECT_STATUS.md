@@ -8,7 +8,7 @@ Elves HQ is a local-first founder cockpit for running Codex elves across a produ
 
 **Users:** Sarthak first: an AI-native founder/operator managing many local fleet repos with Codex and adjacent coding agents.
 
-**IN scope for V0:** manual local product/folder registry, project-wise task backlog, task rooms, elf assignment/status, room asks, logs, artifacts, captured run prompts, editable local product memory, built-in playbooks, decision actions, fix-request retry context, local daily brief, local Elf FM text stations, check gates, CodeVetter review gate adapter, generated worktree cleanup controls, draggable resizable room UI, tasteful elf workbench animation, local-only operation.
+**IN scope for V0:** manual local product/folder registry, project-wise task backlog, task rooms, elf assignment/status, room asks, logs, artifacts, room activity timeline, captured run prompts, editable local product memory, built-in playbooks, decision actions, fix-request retry context, local daily brief, local Elf FM text stations, check gates, CodeVetter review gate adapter, generated worktree cleanup controls, draggable resizable room UI, tasteful elf workbench animation, local-only operation.
 
 **OUT of scope for V0:** cloud hosting, auth, public API, widgets, billing, production deploys, Telegram, metrics integrations, marketing automation, feedback ingestion, multi-user workspaces, and generic multi-agent adapters.
 
@@ -33,7 +33,7 @@ Elves HQ is a local-first founder cockpit for running Codex elves across a produ
 - 2026-07-06 - Project created as a fresh local-first replacement direction for SaaS Maker's original operating-cockpit ambition.
 - 2026-07-06 - V0 OpenSpec change `local-task-rooms-v0` started.
 - 2026-07-06 - Local daemon and root SQLite store added for persisted workspace/room data and room notes.
-- 2026-07-07 - Task-room creation, project-wise task backlog, explicit elf assignment, run launch preflight guards, isolated worktree runs, interrupted-run recovery, diff capture, captured prompts, editable local product memory, built-in playbooks, structured elf asks and founder answers, focused room mode, room workbench tabs, room transcripts, fix-request retry context, local Daily Brief with Markdown export, local Elf FM text stations, check gates, CodeVetter gate adapter, generated worktree cleanup, visible room gate checklist, persistent draggable pane layout, manual local product folders with draft folder preview and folder health inspection, dark cockpit styling, a signal-backed Needs Me queue, founder decision actions, and approval guards for failed or missing gates landed in the local cockpit.
+- 2026-07-07 - Task-room creation, project-wise task backlog, explicit elf assignment, run launch preflight guards, isolated worktree runs, interrupted-run recovery, diff capture, captured prompts, editable local product memory, built-in playbooks, structured elf asks and founder answers, focused room mode, room workbench tabs with activity timeline, room transcripts, fix-request retry context, local Daily Brief with Markdown export, local Elf FM text stations, check gates, CodeVetter gate adapter, generated worktree cleanup, visible room gate checklist, persistent draggable pane layout, manual local product folders with draft folder preview and folder health inspection, dark cockpit styling, a signal-backed Needs Me queue, founder decision actions, and approval guards for failed or missing gates landed in the local cockpit.
 
 ## Products
 
@@ -53,7 +53,8 @@ Elves HQ is a local-first founder cockpit for running Codex elves across a produ
 - Room runs can open founder asks by emitting `ELF_ASK: {"question":"...","options":["..."],"recommendation":"..."}`; valid asks set the room to `asking` and surface in Needs Me.
 - Founder can answer an elf ask from the room by selecting an option; the answer clears the ask, returns the room to idle, and is persisted as a decision plus room note for future run prompts.
 - Selected rooms can expand into a focused room mode that hides the fleet sidebar and task-room list while preserving all room actions, asks, previews, notes, logs, artifacts, and memory.
-- Selected rooms organize detailed evidence into workbench tabs for Logs, Artifacts, Notes, and Product Memory while keeping the core room status and actions visible.
+- Selected rooms organize detailed evidence into workbench tabs for Timeline, Logs, Artifacts, Notes, and Product Memory while keeping the core room status and actions visible.
+- The room workbench opens on a compact Timeline tab that derives recent activity from asks, runs, artifacts, decisions, logs, and notes without adding fake progress or extra persistence.
 - Room transcripts generate local Markdown under `runs/room-transcripts/<room-id>.md`, include task/room evidence, attach as room artifacts, and can be previewed from the cockpit.
 - Product memory is stored as ignored local Markdown under `memory/<product-slug>/`, editable in the room cockpit, and injected into generated run prompts.
 - Built-in playbooks provide reusable workflows for small features, bugs, failing tests, diff review, safe refactors, and daily briefs; selected playbooks are persisted on rooms and injected into prompts.

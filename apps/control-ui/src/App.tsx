@@ -100,7 +100,18 @@ type PaneLayout = {
   rooms: number;
 };
 
-type RoomWorkbenchTab = "logs" | "artifacts" | "notes" | "memory";
+type RoomWorkbenchTab = "timeline" | "logs" | "artifacts" | "notes" | "memory";
+
+type RoomTimelineTone = "green" | "amber" | "red" | "blue" | "secondary";
+
+type RoomTimelineItem = {
+  id: string;
+  source: string;
+  title: string;
+  summary: string;
+  time?: string;
+  tone: RoomTimelineTone;
+};
 
 type TaskDraft = {
   title: string;
@@ -114,6 +125,7 @@ type BacklogAssignment = {
 };
 
 const roomWorkbenchTabs: Array<{ id: RoomWorkbenchTab; label: string }> = [
+  { id: "timeline", label: "Timeline" },
   { id: "logs", label: "Logs" },
   { id: "artifacts", label: "Artifacts" },
   { id: "notes", label: "Notes" },
@@ -360,7 +372,7 @@ export function App() {
       : selectedProductMemory?.sections.find((section) => section.key === selectedMemorySection)?.body ?? "";
   const isRoomFocused = focusedRoomId === selectedRoom?.id;
   const mainGridTemplateColumns = isRoomFocused ? "minmax(720px, 1fr)" : `${paneLayout.fleet}px 10px ${paneLayout.rooms}px 10px minmax(380px, 1fr)`;
-  const selectedRoomWorkbenchTab = selectedRoom ? roomWorkbenchTabsById[selectedRoom.id] ?? "logs" : "logs";
+  const selectedRoomWorkbenchTab = selectedRoom ? roomWorkbenchTabsById[selectedRoom.id] ?? "timeline" : "timeline";
   const draftProduct = useMemo<Product | undefined>(() => {
     const localPath = newProduct.localPath.trim();
     if (!localPath) {
@@ -2143,6 +2155,7 @@ function RoomDetail({
 
       <RoomWorkbench
         room={room}
+        runs={runs}
         productMemory={productMemory}
         selectedMemorySection={selectedMemorySection}
         memoryDraft={memoryDraft}
@@ -2217,6 +2230,7 @@ function RoomDetail({
 
 function RoomWorkbench({
   room,
+  runs,
   productMemory,
   selectedMemorySection,
   memoryDraft,
@@ -2231,6 +2245,7 @@ function RoomWorkbench({
   onSaveNote
 }: {
   room: Room;
+  runs: ElfRun[];
   productMemory?: ProductMemory;
   selectedMemorySection: ProductMemorySectionKey;
   memoryDraft: string;
@@ -2274,6 +2289,7 @@ function RoomWorkbench({
         </div>
       </div>
 
+      {activeTab === "timeline" ? <RoomTimelinePanel room={room} runs={runs} /> : null}
       {activeTab === "logs" ? <RoomLogsPanel room={room} /> : null}
       {activeTab === "artifacts" ? <RoomArtifactsPanel room={room} /> : null}
       {activeTab === "notes" ? (
@@ -2292,6 +2308,111 @@ function RoomWorkbench({
       ) : null}
     </section>
   );
+}
+
+function RoomTimelinePanel({ room, runs }: { room: Room; runs: ElfRun[] }) {
+  const items = buildRoomTimeline(room, runs);
+
+  return (
+    <div className="rounded-xl border border-stone-200 bg-white p-3">
+      {items.length > 0 ? (
+        <ol className="grid gap-2">
+          {items.map((item) => (
+            <li className="grid grid-cols-[12px_1fr] gap-3" key={item.id}>
+              <span className={cn("mt-2 size-2.5 rounded-full ring-4", timelineDotTone[item.tone])} />
+              <div className="rounded-lg border border-stone-200 bg-stone-50/70 p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant={item.tone}>{item.source}</Badge>
+                  {item.time ? <time className="text-[11px] font-semibold text-stone-500">{item.time}</time> : null}
+                </div>
+                <strong className="mt-2 block text-sm leading-5 text-stone-100">{item.title}</strong>
+                <p className="mt-1 text-xs leading-5 text-stone-500">{item.summary}</p>
+              </div>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <p className="rounded-lg border border-stone-200 bg-stone-50 p-3 text-sm text-stone-500">No room activity has been captured yet.</p>
+      )}
+    </div>
+  );
+}
+
+const timelineDotTone: Record<RoomTimelineTone, string> = {
+  green: "bg-emerald-400 ring-emerald-500/15",
+  amber: "bg-amber-400 ring-amber-500/15",
+  red: "bg-red-400 ring-red-500/15",
+  blue: "bg-blue-400 ring-blue-500/15",
+  secondary: "bg-stone-400 ring-stone-500/15"
+};
+
+function buildRoomTimeline(room: Room, runs: ElfRun[]): RoomTimelineItem[] {
+  const items: RoomTimelineItem[] = [];
+
+  for (const ask of room.asks) {
+    items.push({
+      id: `ask-${ask.id}`,
+      source: "Ask",
+      title: ask.question,
+      summary: ask.recommendation,
+      time: ask.createdAt,
+      tone: "amber"
+    });
+  }
+
+  for (const run of runs.slice(0, 4)) {
+    items.push({
+      id: `run-${run.id}`,
+      source: "Run",
+      title: `${run.mode} ${run.status}`,
+      summary: run.command,
+      time: run.endedAt ?? run.startedAt,
+      tone: run.status === "completed" ? "green" : run.status === "running" ? "blue" : run.status === "killed" ? "amber" : "red"
+    });
+  }
+
+  for (const artifact of room.artifacts.slice(-5).reverse()) {
+    items.push({
+      id: `artifact-${artifact.id}`,
+      source: "Artifact",
+      title: artifact.title,
+      summary: artifact.summary,
+      tone: artifact.status === "passed" || artifact.status === "ready" ? "green" : artifact.status === "failed" ? "red" : "secondary"
+    });
+  }
+
+  for (const decision of room.decisions.slice(-4).reverse()) {
+    items.push({
+      id: `decision-${decision.id}`,
+      source: "Decision",
+      title: decision.title,
+      summary: decision.status.replace(/_/g, " "),
+      tone: decision.risk === "high" ? "red" : decision.risk === "medium" ? "amber" : "green"
+    });
+  }
+
+  for (const log of room.logs.slice(-5).reverse()) {
+    items.push({
+      id: `log-${log.id}`,
+      source: "Log",
+      title: log.message,
+      summary: log.level,
+      time: log.time,
+      tone: log.level === "success" ? "green" : log.level === "warning" ? "amber" : log.level === "error" ? "red" : "secondary"
+    });
+  }
+
+  for (const [index, note] of room.notes.slice(-3).reverse().entries()) {
+    items.push({
+      id: `note-${index}-${note.slice(0, 24)}`,
+      source: "Note",
+      title: "Founder note",
+      summary: note,
+      tone: "blue"
+    });
+  }
+
+  return items.slice(0, 12);
 }
 
 function RoomLogsPanel({ room }: { room: Room }) {
