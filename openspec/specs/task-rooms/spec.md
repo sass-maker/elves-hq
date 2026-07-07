@@ -146,6 +146,7 @@ The V0 daemon MUST be able to start, log, persist, inspect, and stop room-scoped
 - **WHEN** the founder starts a read-only Codex inspection
 - **THEN** the daemon launches `codex exec` with read-only sandboxing
 - **AND** Codex output is appended to room logs
+- **AND** Codex JSONL events are normalized into readable room log lines while the durable run log keeps the raw stdout/stderr stream
 - **AND** stdout/stderr output is captured to a durable run log artifact
 - **AND** the daemon can stop the process if the founder kills it or it exceeds the runtime cap
 

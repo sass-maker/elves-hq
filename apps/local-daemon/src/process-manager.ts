@@ -530,7 +530,7 @@ export class RoomProcessManager {
   }
 
   private writeLines(roomId: string, level: "info" | "warning", output: string) {
-    for (const line of output.split(/\r?\n/)) {
+    for (const line of formatRunOutputForRoomLog(output)) {
       const trimmed = line.trim();
       if (trimmed) {
         this.store.appendRoomLog(roomId, level, trimmed);
@@ -616,6 +616,125 @@ export class RoomProcessManager {
     });
     this.store.appendRoomLog(run.roomId, "success", `Captured worktree diff artifact with ${changedCount} changed file${changedCount === 1 ? "" : "s"}.`);
   }
+}
+
+function formatRunOutputForRoomLog(output: string): string[] {
+  return output
+    .split(/\r?\n/)
+    .flatMap((line) => formatRunOutputLine(line.trim()))
+    .filter(Boolean);
+}
+
+function formatRunOutputLine(line: string): string[] {
+  if (!line) {
+    return [];
+  }
+
+  const event = parseJsonObject(line);
+  if (!event) {
+    return [line];
+  }
+
+  const eventType = readStringField(event, "type") ?? readStringField(event, "event") ?? readStringField(event, "kind");
+  const label = eventType ? `Codex ${humanizeEventType(eventType)}` : "Codex event";
+  const text = collectEventText(event);
+  const askText = text.find((item) => item.startsWith("ELF_ASK:"));
+  if (askText) {
+    return [askText];
+  }
+  const facts = collectEventFacts(event);
+  const body = text.length > 0 ? text.join(" ") : facts.join(" ");
+
+  return [body ? `${label}: ${body}` : label];
+}
+
+function parseJsonObject(line: string): Record<string, unknown> | undefined {
+  if (!line.startsWith("{") || !line.endsWith("}")) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(line) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function readStringField(record: Record<string, unknown>, key: string): string | undefined {
+  const value = record[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function humanizeEventType(value: string): string {
+  return value
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function collectEventText(record: Record<string, unknown>): string[] {
+  const textKeys = new Set(["message", "text", "content", "delta", "summary", "result", "output", "error"]);
+  const values: string[] = [];
+  const visit = (value: unknown, key = "", depth = 0) => {
+    if (depth > 4 || values.length >= 4) {
+      return;
+    }
+
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (trimmed && (textKeys.has(key) || trimmed.startsWith("ELF_ASK:"))) {
+        values.push(trimmed);
+      }
+      return;
+    }
+
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        visit(item, key, depth + 1);
+      }
+      return;
+    }
+
+    if (value && typeof value === "object") {
+      for (const [childKey, childValue] of Object.entries(value as Record<string, unknown>)) {
+        visit(childValue, childKey, depth + 1);
+      }
+    }
+  };
+
+  visit(record);
+  return dedupeText(values).map(compactSingleLine);
+}
+
+function collectEventFacts(record: Record<string, unknown>): string[] {
+  const factKeys = ["status", "exit_code", "session_id", "model", "cwd"];
+  return factKeys
+    .map((key) => {
+      const value = record[key];
+      if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+        return `${humanizeEventType(key)}=${String(value)}`;
+      }
+      return "";
+    })
+    .filter(Boolean)
+    .map(compactSingleLine);
+}
+
+function dedupeText(values: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    if (!seen.has(value)) {
+      seen.add(value);
+      result.push(value);
+    }
+  }
+  return result;
+}
+
+function compactSingleLine(value: string): string {
+  return value.replace(/\s+/g, " ").slice(0, 500);
 }
 
 function buildRoomRunPrompt(room: Room, product: Product, task: Task, memory: ProductMemory, playbook: Playbook | undefined, mode: ElfRun["mode"], founderPrompt?: string) {
