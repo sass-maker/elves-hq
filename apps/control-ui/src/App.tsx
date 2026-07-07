@@ -62,7 +62,7 @@ import {
   type Task,
   type WorkspaceSeed
 } from "@elves-hq/core";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import { Separator } from "./components/ui/separator";
@@ -101,11 +101,29 @@ const statusDot: Record<RoomStatus, string> = {
 
 const daemonBaseUrl = import.meta.env.VITE_DAEMON_URL ?? "http://127.0.0.1:4327";
 const paneLayoutStorageKey = "elves-hq:pane-layout:v1";
+const terminalDrawerLayoutStorageKey = "elves-hq:terminal-drawer-layout:v1";
+const terminalGridColumns = 12;
+const terminalGridRowHeight = 74;
 const roomDeckPageSize = 4;
 
 type PaneLayout = {
   fleet: number;
   rooms: number;
+};
+
+type TerminalDrawerLayout = {
+  cols: number;
+  rows: number;
+};
+
+type TerminalDrawerLayouts = Record<string, TerminalDrawerLayout>;
+
+type TerminalDrawerRole = "primary" | "secondary" | "intervention";
+
+type TerminalDrawerEntry = {
+  room: Room;
+  role: TerminalDrawerRole;
+  decisionItem?: DecisionItem;
 };
 
 type RoomDeckScope = "active" | "all";
@@ -283,15 +301,15 @@ function roomProduct(workspace: WorkspaceSeed, room: Room): Product {
   return product;
 }
 
-function uniqueRooms(rooms: Array<Room | undefined>): Room[] {
+function uniqueTerminalDrawerEntries(entries: Array<TerminalDrawerEntry | undefined>): TerminalDrawerEntry[] {
   const seen = new Set<string>();
-  const result: Room[] = [];
-  for (const room of rooms) {
-    if (!room || seen.has(room.id)) {
+  const result: TerminalDrawerEntry[] = [];
+  for (const entry of entries) {
+    if (!entry || seen.has(entry.room.id)) {
       continue;
     }
-    seen.add(room.id);
-    result.push(room);
+    seen.add(entry.room.id);
+    result.push(entry);
   }
   return result;
 }
@@ -1882,13 +1900,24 @@ function TerminalCommandCenter({
 }) {
   const { primaryRoom, secondaryRooms, interventionRoom, interventionItem } = commandCenterRooms;
   const [focusedTerminalRoomId, setFocusedTerminalRoomId] = useState<string | null>(null);
+  const [terminalDrawerLayouts, setTerminalDrawerLayouts] = useState<TerminalDrawerLayouts>(readStoredTerminalDrawerLayouts);
+  const terminalCanvasRef = useRef<HTMLDivElement | null>(null);
   const activeCount = workspace.rooms.filter((room) => room.status === "working").length;
   const interventionCount = decisionItems.length;
   const systemLoad = Math.min(92, Math.max(8, activeCount * 18 + interventionCount * 9));
   const navProducts = workspace.products.slice(0, 7);
-  const terminalRooms = uniqueRooms([primaryRoom, ...secondaryRooms, interventionRoom]);
+  const terminalDrawerEntries = uniqueTerminalDrawerEntries([
+    interventionRoom ? { room: interventionRoom, role: "intervention", decisionItem: interventionItem } : undefined,
+    primaryRoom ? { room: primaryRoom, role: "primary" } : undefined,
+    ...secondaryRooms.map((room) => ({ room, role: "secondary" as const }))
+  ]);
+  const terminalRooms = terminalDrawerEntries.map((entry) => entry.room);
   const focusedTerminalRoom = terminalRooms.find((room) => room.id === focusedTerminalRoomId) ?? (focusedTerminalRoomId ? terminalRooms[0] : undefined);
   const focusedDecisionItem = focusedTerminalRoom?.id === interventionRoom?.id ? interventionItem : undefined;
+
+  useEffect(() => {
+    window.localStorage.setItem(terminalDrawerLayoutStorageKey, JSON.stringify(terminalDrawerLayouts));
+  }, [terminalDrawerLayouts]);
 
   const focusTerminal = (room: Room) => {
     setFocusedTerminalRoomId(room.id);
@@ -1898,6 +1927,39 @@ function TerminalCommandCenter({
   const selectTerminal = (room: Room) => {
     onOpenRoom(room);
     setFocusedTerminalRoomId(room.id);
+  };
+
+  const getTerminalDrawerLayout = (entry: TerminalDrawerEntry) => {
+    return clampTerminalDrawerLayout(terminalDrawerLayouts[entry.room.id] ?? defaultTerminalDrawerLayout(entry.role, entry.room));
+  };
+
+  const startTerminalDrawerResize = (entry: TerminalDrawerEntry, event: React.PointerEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const startLayout = getTerminalDrawerLayout(entry);
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const canvasWidth = terminalCanvasRef.current?.clientWidth ?? 960;
+    const columnWidth = Math.max(64, (canvasWidth - (terminalGridColumns - 1) * 8) / terminalGridColumns);
+
+    const handleMove = (moveEvent: PointerEvent) => {
+      const deltaCols = Math.round((moveEvent.clientX - startX) / columnWidth);
+      const deltaRows = Math.round((moveEvent.clientY - startY) / terminalGridRowHeight);
+      const nextLayout = clampTerminalDrawerLayout({
+        cols: startLayout.cols + deltaCols,
+        rows: startLayout.rows + deltaRows
+      });
+      setTerminalDrawerLayouts((current) => ({ ...current, [entry.room.id]: nextLayout }));
+    };
+
+    const handleUp = () => {
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleUp);
+    };
+
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleUp, { once: true });
   };
 
   return (
@@ -2098,72 +2160,46 @@ function TerminalCommandCenter({
               </aside>
             </div>
           ) : (
-            <div className="grid min-h-[calc(100vh-112px)] grid-cols-[minmax(0,1fr)_410px] gap-2 p-7 max-xl:grid-cols-1 max-sm:p-4">
-              <div className="grid auto-rows-[minmax(246px,1fr)] grid-cols-2 gap-2 max-lg:grid-cols-1">
-              {primaryRoom ? (
-                <TerminalPanel
-                  room={primaryRoom}
-                  workspace={workspace}
-                  runs={roomRuns[primaryRoom.id] ?? []}
-                  runLog={terminalRunLogs[primaryRoom.id] ?? ""}
-                  instructionDraft={terminalInstructions[primaryRoom.id] ?? ""}
-                  selected={primaryRoom.id === selectedRoomId}
-                  span="large"
-                  canRunCommands={daemonState === "local"}
-                  onOpen={() => onOpenRoom(primaryRoom)}
-                  onFocus={() => focusTerminal(primaryRoom)}
-                  onInstructionChange={(value) => onTerminalInstructionChange(primaryRoom.id, value)}
-                  onStartMode={(mode, prompt) => onStartRoomRun(primaryRoom.id, mode, prompt)}
-                  onKillRun={() => onKillRoomRun(primaryRoom.id)}
-                  onAnswerAsk={(askId, answer, note) => onAnswerAsk(primaryRoom.id, askId, answer, note)}
-                />
-              ) : (
-                <TerminalEmptyPanel title="No active terminals" body="Add a local project and create a Codex terminal from the workbench." />
-              )}
-              {secondaryRooms.map((room) => (
-                <TerminalPanel
-                  key={room.id}
-                  room={room}
-                  workspace={workspace}
-                  runs={roomRuns[room.id] ?? []}
-                  runLog={terminalRunLogs[room.id] ?? ""}
-                  instructionDraft={terminalInstructions[room.id] ?? ""}
-                  selected={room.id === selectedRoomId}
-                  canRunCommands={daemonState === "local"}
-                  onOpen={() => onOpenRoom(room)}
-                  onFocus={() => focusTerminal(room)}
-                  onInstructionChange={(value) => onTerminalInstructionChange(room.id, value)}
-                  onStartMode={(mode, prompt) => onStartRoomRun(room.id, mode, prompt)}
-                  onKillRun={() => onKillRoomRun(room.id)}
-                  onAnswerAsk={(askId, answer, note) => onAnswerAsk(room.id, askId, answer, note)}
-                />
-              ))}
-              {secondaryRooms.length === 0 ? (
-                <TerminalEmptyPanel title="Terminal bay idle" body={`Daily Brief: ${dailyBrief.totals.ready} ready, ${dailyBrief.totals.blocked + dailyBrief.totals.failed} stuck.`} />
-              ) : null}
-            </div>
+            <div className="min-h-[calc(100vh-112px)] p-7 max-sm:p-4">
+              <div ref={terminalCanvasRef} className="grid auto-rows-[74px] grid-cols-12 gap-2">
+                {terminalDrawerEntries.length > 0 ? (
+                  terminalDrawerEntries.map((entry) => {
+                    const layout = getTerminalDrawerLayout(entry);
 
-            {interventionRoom ? (
-              <TerminalPanel
-                room={interventionRoom}
-                workspace={workspace}
-                runs={roomRuns[interventionRoom.id] ?? []}
-                runLog={terminalRunLogs[interventionRoom.id] ?? ""}
-                instructionDraft={terminalInstructions[interventionRoom.id] ?? ""}
-                decisionItem={interventionItem}
-                selected={interventionRoom.id === selectedRoomId}
-                variant="alert"
-                canRunCommands={daemonState === "local"}
-                onOpen={() => onOpenRoom(interventionRoom)}
-                onFocus={() => focusTerminal(interventionRoom)}
-                onInstructionChange={(value) => onTerminalInstructionChange(interventionRoom.id, value)}
-                onStartMode={(mode, prompt) => onStartRoomRun(interventionRoom.id, mode, prompt)}
-                onKillRun={() => onKillRoomRun(interventionRoom.id)}
-                onAnswerAsk={(askId, answer, note) => onAnswerAsk(interventionRoom.id, askId, answer, note)}
-              />
-            ) : (
-              <TerminalEmptyPanel title="No intervention" body={elfFmFeed.globalStation.nowPlaying || "Elves are quiet. No founder decision is open."} variant="alert" />
-            )}
+                    return (
+                      <TerminalPanel
+                        key={entry.room.id}
+                        room={entry.room}
+                        workspace={workspace}
+                        runs={roomRuns[entry.room.id] ?? []}
+                        runLog={terminalRunLogs[entry.room.id] ?? ""}
+                        instructionDraft={terminalInstructions[entry.room.id] ?? ""}
+                        decisionItem={entry.decisionItem}
+                        selected={entry.room.id === selectedRoomId}
+                        variant={entry.role === "intervention" ? "alert" : "default"}
+                        drawerLayout={layout}
+                        canRunCommands={daemonState === "local"}
+                        onOpen={() => onOpenRoom(entry.room)}
+                        onFocus={() => focusTerminal(entry.room)}
+                        onResizeStart={(event) => startTerminalDrawerResize(entry, event)}
+                        onInstructionChange={(value) => onTerminalInstructionChange(entry.room.id, value)}
+                        onStartMode={(mode, prompt) => onStartRoomRun(entry.room.id, mode, prompt)}
+                        onKillRun={() => onKillRoomRun(entry.room.id)}
+                        onAnswerAsk={(askId, answer, note) => onAnswerAsk(entry.room.id, askId, answer, note)}
+                      />
+                    );
+                  })
+                ) : (
+                  <div className="col-span-12 row-span-4">
+                    <TerminalEmptyPanel title="No active terminals" body="Add a local project and create a Codex terminal from the workbench." />
+                  </div>
+                )}
+                {terminalDrawerEntries.length === 1 ? (
+                  <div className="col-span-4 row-span-4">
+                    <TerminalEmptyPanel title="Terminal bay idle" body={`Daily Brief: ${dailyBrief.totals.ready} ready, ${dailyBrief.totals.blocked + dailyBrief.totals.failed} stuck.`} />
+                  </div>
+                ) : null}
+              </div>
             </div>
           )}
         </section>
@@ -2183,9 +2219,11 @@ function TerminalPanel({
   variant = "default",
   span,
   isTerminalFocused = false,
+  drawerLayout,
   canRunCommands,
   onOpen,
   onFocus,
+  onResizeStart,
   onInstructionChange,
   onStartMode,
   onKillRun,
@@ -2201,9 +2239,11 @@ function TerminalPanel({
   variant?: "default" | "alert";
   span?: "large" | "focused";
   isTerminalFocused?: boolean;
+  drawerLayout?: TerminalDrawerLayout;
   canRunCommands: boolean;
   onOpen: () => void;
   onFocus: () => void;
+  onResizeStart?: (event: React.PointerEvent<HTMLButtonElement>) => void;
   onInstructionChange: (value: string) => void;
   onStartMode: (mode: ElfRun["mode"], prompt?: string) => void;
   onKillRun: () => void;
@@ -2226,6 +2266,14 @@ function TerminalPanel({
         terminalToneClasses[tone].panel,
         selected && "ring-1 ring-blue-200/40"
       )}
+      style={
+        drawerLayout
+          ? {
+              gridColumn: `span ${drawerLayout.cols}`,
+              gridRow: `span ${drawerLayout.rows}`
+            }
+          : undefined
+      }
     >
       <header className={cn("flex items-center justify-between border-b bg-[#020408] px-4 py-3", terminalToneClasses[tone].header)}>
         <div className="flex min-w-0 items-center gap-2">
@@ -2307,9 +2355,20 @@ function TerminalPanel({
           </span>
         </div>
       </footer>
-      <div className="absolute bottom-1 right-1 text-slate-700 opacity-40 transition-opacity group-hover:opacity-90">
-        <GripVertical size={14} className="-rotate-45" />
-      </div>
+      {onResizeStart ? (
+        <button
+          className="absolute bottom-1 right-1 grid size-5 cursor-nwse-resize place-items-center text-slate-700 opacity-40 transition-opacity hover:text-slate-400 group-hover:opacity-90"
+          type="button"
+          aria-label={`Resize ${room.title}`}
+          onPointerDown={onResizeStart}
+        >
+          <GripVertical size={14} className="-rotate-45" />
+        </button>
+      ) : (
+        <div className="absolute bottom-1 right-1 text-slate-700 opacity-40 transition-opacity group-hover:opacity-90">
+          <GripVertical size={14} className="-rotate-45" />
+        </div>
+      )}
     </article>
   );
 }
@@ -3044,10 +3103,57 @@ function readStoredPaneLayout(): PaneLayout {
   }
 }
 
+function readStoredTerminalDrawerLayouts(): TerminalDrawerLayouts {
+  if (typeof window === "undefined") {
+    return {};
+  }
+
+  const stored = window.localStorage.getItem(terminalDrawerLayoutStorageKey);
+  if (!stored) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(stored) as Record<string, Partial<TerminalDrawerLayout>>;
+    return Object.fromEntries(
+      Object.entries(parsed)
+        .filter(([roomId]) => roomId.trim().length > 0)
+        .map(([roomId, layout]) => [
+          roomId,
+          clampTerminalDrawerLayout({
+            cols: typeof layout.cols === "number" ? layout.cols : 4,
+            rows: typeof layout.rows === "number" ? layout.rows : 4
+          })
+        ])
+    );
+  } catch {
+    return {};
+  }
+}
+
 function clampPaneLayout(layout: PaneLayout): PaneLayout {
   return {
     fleet: clampNumber(layout.fleet, 220, 360),
     rooms: clampNumber(layout.rooms, 420, 760)
+  };
+}
+
+function defaultTerminalDrawerLayout(role: TerminalDrawerRole, room: Room): TerminalDrawerLayout {
+  if (role === "primary") {
+    return { cols: 8, rows: 5 };
+  }
+
+  if (role === "intervention" || room.status === "asking" || room.status === "blocked" || room.status === "failed" || room.status === "ready") {
+    return { cols: 4, rows: 5 };
+  }
+
+  return { cols: 4, rows: 4 };
+}
+
+function clampTerminalDrawerLayout(layout: TerminalDrawerLayout): TerminalDrawerLayout {
+  return {
+    cols: clampNumber(Math.round(layout.cols), 3, terminalGridColumns),
+    rows: clampNumber(Math.round(layout.rows), 3, 10)
   };
 }
 
