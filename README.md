@@ -29,7 +29,7 @@ The add-project panel includes a local folder browser backed by the daemon. It l
 
 Worktree-backed runs create isolated git worktrees under `runs/<run-id>/worktree` and captured patches at `runs/<run-id>/diff.patch`. The `runs/` directory is local-only and ignored.
 
-Check gates run inside the captured worktree, choose a package script by key (`typecheck` in the UI today), and write output to `runs/<run-id>/check.log`.
+Check gates run inside the captured worktree, choose a package script by key (`check`, `typecheck`, `test`, or `build`), and write output to `runs/<run-id>/check.log`. The room UI offers detected gate scripts plus Auto, which lets the daemon pick the first supported gate.
 
 CodeVetter gates run against captured worktree diffs and write reports to `runs/<run-id>/codevetter.md`. Set `CODEVETTER_COMMAND` to use an external reviewer command; `{diff}`, `{worktree}`, and `{output}` placeholders are supported. Without it, the daemon uses a deterministic local fallback scan for high-confidence diff risks such as hardcoded secrets, shell execution, raw HTML injection, dynamic code execution, and newly introduced network calls.
 

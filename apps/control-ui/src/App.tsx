@@ -37,6 +37,7 @@ import {
   getBlockingArtifacts,
   statusLabels,
   type Artifact,
+  type CheckScriptKey,
   type DailyBrief,
   type DailyBriefItem,
   type DailyBriefSection,
@@ -110,6 +111,8 @@ type RoomDeckScope = "active" | "all";
 type RoomSignalFilter = "all" | "needs" | "working" | "ready" | "failed" | "blocked" | "idle";
 
 type RoomSortOrder = "priority" | "recent" | "project";
+
+type CheckGateSelection = CheckScriptKey | "auto";
 
 type OverviewPanel = "needs" | "fm" | "backlog" | "brief";
 
@@ -200,6 +203,8 @@ const roomSortLabels: Record<RoomSortOrder, string> = {
   recent: "Recent activity",
   project: "Project name"
 };
+
+const checkScriptKeys: CheckScriptKey[] = ["check", "typecheck", "test", "build"];
 const productPriorities: Product["priority"][] = ["P0", "P1", "P2"];
 const taskStatusTone: Record<Task["status"], "green" | "amber" | "red" | "blue" | "secondary"> = {
   inbox: "secondary",
@@ -282,6 +287,7 @@ export function App() {
   const [roomSortOrder, setRoomSortOrder] = useState<RoomSortOrder>("priority");
   const [roomWorkbenchTabsById, setRoomWorkbenchTabsById] = useState<Record<string, RoomWorkbenchTab>>({});
   const [runInstructionsByRoomId, setRunInstructionsByRoomId] = useState<Record<string, string>>({});
+  const [checkGateByRoomId, setCheckGateByRoomId] = useState<Record<string, CheckGateSelection>>({});
   const [focusedRoomId, setFocusedRoomId] = useState<string | null>(null);
   const [roomDeckPage, setRoomDeckPage] = useState(0);
   const [roomDeckScope, setRoomDeckScope] = useState<RoomDeckScope>("active");
@@ -759,7 +765,7 @@ export function App() {
     setDiffPreview((current) => ({ ...current, [roomId]: body.diff || "Diff file is empty." }));
   };
 
-  const runLatestCheck = async (roomId: string) => {
+  const runLatestCheck = async (roomId: string, scriptKey: CheckGateSelection) => {
     const run = roomRuns[roomId]?.find((item) => item.mode.includes("worktree") && item.status === "completed");
     if (!run) {
       setCheckPreview((current) => ({ ...current, [roomId]: "No completed worktree run is ready for a check gate yet." }));
@@ -771,7 +777,7 @@ export function App() {
       headers: {
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ scriptKey: "typecheck" })
+      body: JSON.stringify(scriptKey === "auto" ? {} : { scriptKey })
     });
 
     if (!response.ok) {
@@ -1545,11 +1551,13 @@ export function App() {
           activeWorkbenchTab={selectedRoomWorkbenchTab}
           isFocused={isRoomFocused}
           runInstructionDraft={runInstructionsByRoomId[selectedRoom.id] ?? ""}
+          checkGateSelection={checkGateByRoomId[selectedRoom.id] ?? "auto"}
           onSelectMemorySection={setSelectedMemorySection}
           onMemoryDraftChange={(value) => setMemoryDrafts((current) => ({ ...current, [selectedMemoryDraftKey]: value }))}
           onSaveMemory={(section, body) => saveProductMemorySection(selectedRoom.productId, section, body)}
           onSelectWorkbenchTab={(tab) => setRoomWorkbenchTabsById((current) => ({ ...current, [selectedRoom.id]: tab }))}
           onRunInstructionDraftChange={(value) => setRunInstructionsByRoomId((current) => ({ ...current, [selectedRoom.id]: value }))}
+          onCheckGateSelectionChange={(value) => setCheckGateByRoomId((current) => ({ ...current, [selectedRoom.id]: value }))}
           noteDraft={roomNotes[selectedRoom.id] ?? ""}
           onNoteDraftChange={(value) => setRoomNotes((current) => ({ ...current, [selectedRoom.id]: value }))}
           onSaveNote={() => saveRoomNote(selectedRoom.id)}
@@ -1558,7 +1566,7 @@ export function App() {
           onStartMode={(mode, prompt) => startRoomRun(selectedRoom.id, mode, prompt)}
           onOpenPrompt={() => openLatestPrompt(selectedRoom.id)}
           onOpenDiff={() => openLatestDiff(selectedRoom.id)}
-          onRunCheck={() => runLatestCheck(selectedRoom.id)}
+          onRunCheck={(scriptKey) => runLatestCheck(selectedRoom.id, scriptKey)}
           onRunCodeVetter={() => runLatestCodeVetter(selectedRoom.id)}
           onCleanupWorktree={() => cleanupLatestWorktree(selectedRoom.id)}
           onApplyDiff={() => applyLatestDiff(selectedRoom.id)}
@@ -1948,6 +1956,15 @@ function folderNameToProductName(path: string): string {
     .filter(Boolean)
     .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
     .join(" ");
+}
+
+function buildCheckGateOptions(productInspection: ProductFolderInspection | undefined): CheckScriptKey[] {
+  const detected = productInspection?.scripts
+    .filter((script) => script.gate)
+    .map((script) => script.name)
+    .filter((name): name is CheckScriptKey => checkScriptKeys.includes(name as CheckScriptKey)) ?? [];
+
+  return checkScriptKeys.filter((key) => detected.includes(key));
 }
 
 function chunkArray<T>(items: T[], size: number): T[][] {
@@ -2776,11 +2793,13 @@ function RoomDetail({
   activeWorkbenchTab,
   isFocused,
   runInstructionDraft,
+  checkGateSelection,
   onSelectMemorySection,
   onMemoryDraftChange,
   onSaveMemory,
   onSelectWorkbenchTab,
   onRunInstructionDraftChange,
+  onCheckGateSelectionChange,
   noteDraft,
   onNoteDraftChange,
   onSaveNote,
@@ -2818,11 +2837,13 @@ function RoomDetail({
   activeWorkbenchTab: RoomWorkbenchTab;
   isFocused: boolean;
   runInstructionDraft: string;
+  checkGateSelection: CheckGateSelection;
   onSelectMemorySection: (section: ProductMemorySectionKey) => void;
   onMemoryDraftChange: (value: string) => void;
   onSaveMemory: (section: ProductMemorySectionKey, body: string) => void;
   onSelectWorkbenchTab: (tab: RoomWorkbenchTab) => void;
   onRunInstructionDraftChange: (value: string) => void;
+  onCheckGateSelectionChange: (value: CheckGateSelection) => void;
   noteDraft: string;
   onNoteDraftChange: (value: string) => void;
   onSaveNote: () => void;
@@ -2831,7 +2852,7 @@ function RoomDetail({
   onStartMode: (mode: ElfRun["mode"], prompt?: string) => void;
   onOpenPrompt: () => void;
   onOpenDiff: () => void;
-  onRunCheck: () => void;
+  onRunCheck: (scriptKey: CheckGateSelection) => void;
   onRunCodeVetter: () => void;
   onCleanupWorktree: () => void;
   onApplyDiff: () => void;
@@ -2850,6 +2871,7 @@ function RoomDetail({
   const activeRun = runs.find((run) => run.status === "running");
   const decisionNote = noteDraft.trim() || undefined;
   const runInstructions = runInstructionDraft.trim() || undefined;
+  const checkGateOptions = buildCheckGateOptions(productInspection);
   const activeMemorySection = productMemory?.sections.find((section) => section.key === selectedMemorySection);
   const gateChecklist = buildGateChecklist(room);
   const readOnlyBlocker = productInspection && (!productInspection.exists || !productInspection.isDirectory) ? "Product folder is missing or is not a directory." : undefined;
@@ -2937,12 +2959,27 @@ function RoomDetail({
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onOpenPrompt}><ScrollText size={15} />Prompt</Button>
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onGenerateTranscript}><FileText size={15} />Doc</Button>
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onOpenDiff}><GitBranch size={15} />Diff</Button>
-            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onRunCheck}><TestTube2 size={15} />Check</Button>
+            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onRunCheck(checkGateSelection)}><TestTube2 size={15} />Check</Button>
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onRunCodeVetter}><ShieldCheck size={15} />Vet</Button>
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onApplyDiff}><GitBranch size={15} />Apply</Button>
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onCleanupWorktree}><Trash2 size={15} />Clean</Button>
             <Button className="min-w-0 px-2" variant="destructive" size="sm" type="button" onClick={onKillRun} disabled={!activeRun}><CircleStop size={15} />Kill</Button>
           </div>
+          <label className="mt-2 grid gap-1 text-xs font-extrabold uppercase text-stone-500">
+            Check gate
+            <select
+              className="h-8 rounded-md border border-stone-700 bg-stone-950 px-2 text-xs font-bold normal-case text-stone-100"
+              value={checkGateSelection}
+              onChange={(event) => onCheckGateSelectionChange(event.target.value as CheckGateSelection)}
+            >
+              <option value="auto">Auto</option>
+              {checkGateOptions.map((key) => (
+                <option value={key} key={key}>
+                  {key}
+                </option>
+              ))}
+            </select>
+          </label>
           <div className="mt-3 grid grid-cols-2 gap-2 border-t border-stone-200 pt-3">
             <Button className="min-w-0 px-2" size="sm" type="button" onClick={() => onDecisionAction("approve", decisionNote)}>Approve</Button>
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onDecisionAction("request_fix", decisionNote)}>Request fix</Button>
