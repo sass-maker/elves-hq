@@ -153,6 +153,9 @@ const decisionActionTone: Record<DecisionAction, "default" | "outline" | "destru
   retry: "outline"
 };
 
+const productStatuses: Product["status"][] = ["active", "maintain", "paused", "killed"];
+const productPriorities: Product["priority"][] = ["P0", "P1", "P2"];
+
 function decisionActionFromLabel(label: string): DecisionAction | undefined {
   return (Object.entries(decisionActionLabels).find(([, value]) => value === label)?.[0] as DecisionAction | undefined) ?? undefined;
 }
@@ -212,6 +215,7 @@ export function App() {
   const [productInspections, setProductInspections] = useState<Record<string, ProductFolderInspection>>({});
   const [draftProductInspection, setDraftProductInspection] = useState<ProductFolderInspection | undefined>();
   const [draftProductInspectionError, setDraftProductInspectionError] = useState("");
+  const [productSettingsStatus, setProductSettingsStatus] = useState<Record<string, string>>({});
   const [productMemoryById, setProductMemoryById] = useState<Record<string, ProductMemory>>({});
   const [selectedMemorySection, setSelectedMemorySection] = useState<ProductMemorySectionKey>("PRODUCT");
   const [memoryDrafts, setMemoryDrafts] = useState<Record<string, string>>({});
@@ -949,6 +953,27 @@ export function App() {
     });
   };
 
+  const saveProductSettings = async (productId: string, input: Pick<Product, "status" | "priority" | "currentGoal">) => {
+    const response = await fetch(`${daemonBaseUrl}/api/products/${productId}/settings`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(input)
+    });
+
+    if (!response.ok) {
+      const body = (await response.json().catch(() => ({ error: "Product settings failed." }))) as { error?: string };
+      setProductSettingsStatus((current) => ({ ...current, [productId]: body.error ?? "Product settings failed." }));
+      return;
+    }
+
+    const body = (await response.json()) as { product: Product; workspace: WorkspaceSeed };
+    setWorkspace(body.workspace);
+    setSelectedProductId(body.product.id);
+    setProductSettingsStatus((current) => ({ ...current, [productId]: "Saved." }));
+  };
+
   const applyLatestDiff = async (roomId: string) => {
     const run = roomRuns[roomId]?.find((item) => item.mode.includes("worktree") && item.status === "completed");
     if (!run) {
@@ -1057,7 +1082,14 @@ export function App() {
           </section>
         ) : null}
 
-        {selectedProduct ? <ProductFolderCard product={selectedProduct} inspection={selectedProductInspection} /> : null}
+        {selectedProduct ? (
+          <ProductFolderCard
+            product={selectedProduct}
+            inspection={selectedProductInspection}
+            settingsStatus={productSettingsStatus[selectedProduct.id]}
+            onSaveSettings={(input) => saveProductSettings(selectedProduct.id, input)}
+          />
+        ) : null}
 
         <div className="mt-2 grid gap-2">
           {workspace.products.map((product) => {
@@ -1835,9 +1867,32 @@ function ProjectButton({
   );
 }
 
-function ProductFolderCard({ product, inspection }: { product: Product; inspection?: ProductFolderInspection }) {
+function ProductFolderCard({
+  product,
+  inspection,
+  settingsStatus,
+  onSaveSettings
+}: {
+  product: Product;
+  inspection?: ProductFolderInspection;
+  settingsStatus?: string;
+  onSaveSettings?: (input: Pick<Product, "status" | "priority" | "currentGoal">) => void;
+}) {
   const healthy = inspection?.exists && inspection.isDirectory && inspection.isGitRepo;
   const gateScripts = inspection?.scripts.filter((script) => script.gate).slice(0, 4) ?? [];
+  const [settingsDraft, setSettingsDraft] = useState({
+    status: product.status,
+    priority: product.priority,
+    currentGoal: product.currentGoal
+  });
+
+  useEffect(() => {
+    setSettingsDraft({
+      status: product.status,
+      priority: product.priority,
+      currentGoal: product.currentGoal
+    });
+  }, [product.currentGoal, product.id, product.priority, product.status]);
 
   return (
     <section className="mt-3 rounded-lg border border-stone-800 bg-stone-900/70 p-3" aria-label="Product folder health">
@@ -1871,6 +1926,49 @@ function ProductFolderCard({ product, inspection }: { product: Product; inspecti
           {inspection.warnings.length > 0 ? (
             <p className="text-xs leading-5 text-amber-300">{inspection.warnings[0]}</p>
           ) : null}
+        </div>
+      ) : null}
+      {onSaveSettings ? (
+        <div className="mt-3 grid gap-2 border-t border-stone-800 pt-3">
+          <div className="grid grid-cols-2 gap-2">
+            <label className="grid gap-1 text-[11px] font-bold uppercase text-stone-500">
+              Status
+              <select
+                className="h-8 rounded-md border border-stone-700 bg-stone-950 px-2 text-xs normal-case text-stone-100"
+                value={settingsDraft.status}
+                onChange={(event) => setSettingsDraft((current) => ({ ...current, status: event.target.value as Product["status"] }))}
+              >
+                {productStatuses.map((status) => (
+                  <option value={status} key={status}>{status}</option>
+                ))}
+              </select>
+            </label>
+            <label className="grid gap-1 text-[11px] font-bold uppercase text-stone-500">
+              Priority
+              <select
+                className="h-8 rounded-md border border-stone-700 bg-stone-950 px-2 text-xs normal-case text-stone-100"
+                value={settingsDraft.priority}
+                onChange={(event) => setSettingsDraft((current) => ({ ...current, priority: event.target.value as Product["priority"] }))}
+              >
+                {productPriorities.map((priority) => (
+                  <option value={priority} key={priority}>{priority}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <Textarea
+            className="min-h-16"
+            value={settingsDraft.currentGoal}
+            onChange={(event) => setSettingsDraft((current) => ({ ...current, currentGoal: event.target.value }))}
+            rows={2}
+            placeholder="Current goal"
+          />
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs text-stone-500">{settingsStatus ?? "Local product settings."}</span>
+            <Button size="sm" type="button" onClick={() => onSaveSettings(settingsDraft)}>
+              Save
+            </Button>
+          </div>
         </div>
       ) : null}
     </section>

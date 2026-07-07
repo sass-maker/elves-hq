@@ -83,6 +83,14 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    const productSettingsMatch = url.pathname.match(/^\/api\/products\/([^/]+)\/settings$/);
+    if (request.method === "POST" && productSettingsMatch) {
+      const body = await readJson(request);
+      const product = store.updateProductSettings(productSettingsMatch[1], readUpdateProductSettingsInput(body));
+      sendJson(response, 200, { product, workspace: store.getWorkspace() });
+      return;
+    }
+
     if (request.method === "POST" && url.pathname === "/api/tasks") {
       const body = await readJson(request);
       const task = store.createTask(readCreateTaskInput(body));
@@ -441,6 +449,18 @@ function readInspectProductPathInput(body: unknown) {
   return {
     name: typeof value.name === "string" ? value.name : "",
     localPath: value.localPath
+  };
+}
+
+function readUpdateProductSettingsInput(body: unknown) {
+  if (!body || typeof body !== "object") {
+    throw new Error("Product settings body is required");
+  }
+  const value = body as { currentGoal?: unknown; priority?: unknown; status?: unknown };
+  return {
+    currentGoal: typeof value.currentGoal === "string" ? value.currentGoal : undefined,
+    priority: readOptionalProductPriority(value.priority),
+    status: readOptionalProductStatus(value.status)
   };
 }
 

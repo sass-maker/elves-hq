@@ -140,6 +140,12 @@ export interface CreateProductInput {
   status?: Product["status"];
 }
 
+export interface UpdateProductSettingsInput {
+  currentGoal?: string;
+  priority?: Product["priority"];
+  status?: Product["status"];
+}
+
 export interface ResolveDecisionInput {
   action: DecisionAction;
   note?: string;
@@ -355,6 +361,25 @@ export class WorkspaceStore {
            currentGoal = excluded.currentGoal`
       )
       .run(product.id, product.name, product.slug, product.localPath, product.status, product.priority, product.currentGoal);
+
+    return this.getProduct(product.id);
+  }
+
+  updateProductSettings(productId: string, input: UpdateProductSettingsInput): Product {
+    const product = this.getProduct(productId);
+    const next: Product = {
+      ...product,
+      status: input.status ?? product.status,
+      priority: input.priority ?? product.priority,
+      currentGoal:
+        input.currentGoal === undefined
+          ? product.currentGoal
+          : input.currentGoal.trim() || "Manual local product. Add the current goal before assigning larger elf work."
+    };
+
+    this.db
+      .prepare("UPDATE products SET status = ?, priority = ?, currentGoal = ? WHERE id = ?")
+      .run(next.status, next.priority, next.currentGoal, product.id);
 
     return this.getProduct(product.id);
   }
