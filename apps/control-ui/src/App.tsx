@@ -19,7 +19,6 @@ import {
   MessageSquare,
   Minimize2,
   PanelRightOpen,
-  Play,
   Radio,
   Inbox,
   ScrollText,
@@ -113,6 +112,26 @@ type RoomSignalFilter = "all" | "needs" | "working" | "ready" | "failed" | "bloc
 type RoomSortOrder = "priority" | "recent" | "project";
 
 type CheckGateSelection = CheckScriptKey | "auto";
+
+type RoomCommand =
+  | "build"
+  | "draft"
+  | "read"
+  | "dry"
+  | "prompt"
+  | "log"
+  | "transcript"
+  | "diff"
+  | "check"
+  | "vet"
+  | "apply"
+  | "cleanup"
+  | "approve"
+  | "request_fix"
+  | "snooze"
+  | "reject"
+  | "retry"
+  | "kill";
 
 type OverviewPanel = "needs" | "fm" | "backlog" | "brief";
 
@@ -2911,8 +2930,11 @@ function RoomDetail({
   const playbook = roomPlaybook(workspace, room);
   const ask = room.asks[0];
   const activeRun = runs.find((run) => run.status === "running");
+  const completedWorktreeRun = runs.find((run) => run.mode.includes("worktree") && run.status === "completed");
+  const inactiveWorktreeRun = runs.find((run) => run.mode.includes("worktree") && run.status !== "running");
   const decisionNote = noteDraft.trim() || undefined;
   const runInstructions = runInstructionDraft.trim() || undefined;
+  const [selectedRoomCommand, setSelectedRoomCommand] = useState<RoomCommand>("build");
   const checkGateOptions = buildCheckGateOptions(productInspection);
   const activeMemorySection = productMemory?.sections.find((section) => section.key === selectedMemorySection);
   const gateChecklist = buildGateChecklist(room);
@@ -2923,6 +2945,77 @@ function RoomDetail({
       : productInspection && !productInspection.isGitRepo
         ? "Product folder is not a git repository."
         : undefined;
+  const roomCommands: Array<{ id: RoomCommand; label: string; group: string; disabled?: boolean }> = [
+    { id: "build", label: "Build in worktree", group: "Run", disabled: Boolean(worktreeBlocker) },
+    { id: "draft", label: "Draft in worktree", group: "Run", disabled: Boolean(worktreeBlocker) },
+    { id: "read", label: "Read-only Codex", group: "Run", disabled: Boolean(readOnlyBlocker) },
+    { id: "dry", label: "Local dry run", group: "Run" },
+    { id: "prompt", label: "Open prompt", group: "Inspect", disabled: runs.length === 0 },
+    { id: "log", label: "Open run log", group: "Inspect", disabled: runs.length === 0 },
+    { id: "transcript", label: "Generate transcript", group: "Inspect" },
+    { id: "diff", label: "Open diff", group: "Inspect", disabled: !completedWorktreeRun },
+    { id: "check", label: "Run check gate", group: "Inspect", disabled: !completedWorktreeRun },
+    { id: "vet", label: "Run CodeVetter", group: "Inspect", disabled: !completedWorktreeRun },
+    { id: "apply", label: "Apply approved diff", group: "Inspect", disabled: !completedWorktreeRun },
+    { id: "cleanup", label: "Clean worktree", group: "Inspect", disabled: !inactiveWorktreeRun },
+    { id: "approve", label: "Approve room", group: "Decision" },
+    { id: "request_fix", label: "Request fix", group: "Decision" },
+    { id: "snooze", label: "Snooze room", group: "Decision" },
+    { id: "reject", label: "Reject room", group: "Decision" },
+    { id: "retry", label: "Retry latest run", group: "Decision", disabled: runs.length === 0 },
+    { id: "kill", label: "Stop active run", group: "Decision", disabled: !activeRun }
+  ];
+  const selectedCommand = roomCommands.find((command) => command.id === selectedRoomCommand) ?? roomCommands[0];
+  const executeRoomCommand = () => {
+    switch (selectedRoomCommand) {
+      case "build":
+        onStartMode("codex-worktree", runInstructions);
+        break;
+      case "draft":
+        onStartMode("worktree-dry-run", runInstructions);
+        break;
+      case "read":
+        onStartCodexReadOnly(runInstructions);
+        break;
+      case "dry":
+        onStartDryRun(runInstructions);
+        break;
+      case "prompt":
+        onOpenPrompt();
+        break;
+      case "log":
+        onOpenRunLog();
+        break;
+      case "transcript":
+        onGenerateTranscript();
+        break;
+      case "diff":
+        onOpenDiff();
+        break;
+      case "check":
+        onRunCheck(checkGateSelection);
+        break;
+      case "vet":
+        onRunCodeVetter();
+        break;
+      case "apply":
+        onApplyDiff();
+        break;
+      case "cleanup":
+        onCleanupWorktree();
+        break;
+      case "approve":
+      case "request_fix":
+      case "snooze":
+      case "reject":
+      case "retry":
+        onDecisionAction(selectedRoomCommand, decisionNote);
+        break;
+      case "kill":
+        onKillRun();
+        break;
+    }
+  };
 
   return (
     <div className="grid gap-4 p-4">
@@ -2993,51 +3086,60 @@ function RoomDetail({
               rows={3}
             />
           </label>
-          <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
-            <Button className="min-w-0 px-2" size="sm" type="button" onClick={() => onStartMode("codex-worktree", runInstructions)} disabled={Boolean(worktreeBlocker)}><Hammer size={15} />Build</Button>
-            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onStartMode("worktree-dry-run", runInstructions)} disabled={Boolean(worktreeBlocker)}><GitBranch size={15} />Draft</Button>
-            <Button className="min-w-0 px-2" variant="destructive" size="sm" type="button" onClick={onKillRun} disabled={!activeRun} aria-label="Kill active run"><CircleStop size={15} /></Button>
-          </div>
-          <label className="mt-2 grid gap-1 text-xs font-extrabold uppercase text-stone-500">
-            Check gate
-            <select
-              className="h-8 rounded-md border border-stone-700 bg-stone-950 px-2 text-xs font-bold normal-case text-stone-100"
-              value={checkGateSelection}
-              onChange={(event) => onCheckGateSelectionChange(event.target.value as CheckGateSelection)}
+          <div className="grid grid-cols-[1fr_auto] gap-2">
+            <label className="grid gap-1 text-xs font-extrabold uppercase text-stone-500">
+              Command
+              <select
+                className="h-9 rounded-md border border-stone-700 bg-stone-950 px-2 text-sm font-bold normal-case text-stone-100"
+                value={selectedRoomCommand}
+                onChange={(event) => setSelectedRoomCommand(event.target.value as RoomCommand)}
+              >
+                {["Run", "Inspect", "Decision"].map((group) => (
+                  <optgroup label={group} key={group}>
+                    {roomCommands
+                      .filter((command) => command.group === group)
+                      .map((command) => (
+                        <option value={command.id} disabled={command.disabled} key={command.id}>
+                          {command.label}
+                        </option>
+                      ))}
+                  </optgroup>
+                ))}
+              </select>
+            </label>
+            <Button
+              className="mt-5 min-w-28 px-3"
+              variant={selectedRoomCommand === "reject" || selectedRoomCommand === "kill" ? "destructive" : selectedRoomCommand === "build" || selectedRoomCommand === "approve" ? "default" : "outline"}
+              size="sm"
+              type="button"
+              onClick={executeRoomCommand}
+              disabled={Boolean(selectedCommand.disabled)}
             >
-              <option value="auto">Auto</option>
-              {checkGateOptions.map((key) => (
-                <option value={key} key={key}>
-                  {key}
-                </option>
-              ))}
-            </select>
-          </label>
-          <details className="mt-3 rounded-lg border border-stone-800 bg-stone-950/60 p-2">
-            <summary className="cursor-pointer list-none text-xs font-extrabold uppercase text-stone-500">Evidence tools</summary>
-            <div className="mt-2 grid grid-cols-4 gap-2">
-              <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onStartDryRun(runInstructions)}><Play size={15} />Dry</Button>
-              <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onStartCodexReadOnly(runInstructions)} disabled={Boolean(readOnlyBlocker)}><SquareTerminal size={15} />Read</Button>
-              <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onOpenPrompt}><ScrollText size={15} />Prompt</Button>
-              <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onOpenRunLog}><SquareTerminal size={15} />Log</Button>
-              <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onGenerateTranscript}><FileText size={15} />Doc</Button>
-              <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onOpenDiff}><GitBranch size={15} />Diff</Button>
-              <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onRunCheck(checkGateSelection)}><TestTube2 size={15} />Check</Button>
-              <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onRunCodeVetter}><ShieldCheck size={15} />Vet</Button>
-              <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onApplyDiff}><GitBranch size={15} />Apply</Button>
-              <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onCleanupWorktree}><Trash2 size={15} />Clean</Button>
-            </div>
-          </details>
-          <details className="mt-2 rounded-lg border border-stone-800 bg-stone-950/60 p-2">
-            <summary className="cursor-pointer list-none text-xs font-extrabold uppercase text-stone-500">Decision actions</summary>
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              <Button className="min-w-0 px-2" size="sm" type="button" onClick={() => onDecisionAction("approve", decisionNote)}>Approve</Button>
-              <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onDecisionAction("request_fix", decisionNote)}>Request fix</Button>
-              <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onDecisionAction("snooze", decisionNote)}>Snooze</Button>
-              <Button className="min-w-0 px-2" variant="destructive" size="sm" type="button" onClick={() => onDecisionAction("reject", decisionNote)}>Reject</Button>
-              <Button className="col-span-2 min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onDecisionAction("retry", decisionNote)}>Retry latest run</Button>
-            </div>
-          </details>
+              {selectedCommand.label}
+            </Button>
+          </div>
+          {selectedRoomCommand === "check" ? (
+            <label className="mt-2 grid gap-1 text-xs font-extrabold uppercase text-stone-500">
+              Check gate
+              <select
+                className="h-8 rounded-md border border-stone-700 bg-stone-950 px-2 text-xs font-bold normal-case text-stone-100"
+                value={checkGateSelection}
+                onChange={(event) => onCheckGateSelectionChange(event.target.value as CheckGateSelection)}
+              >
+                <option value="auto">Auto</option>
+                {checkGateOptions.map((key) => (
+                  <option value={key} key={key}>
+                    {key}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+          {selectedCommand.disabled ? (
+            <p className="mt-2 rounded-md border border-stone-800 bg-stone-950/60 px-2 py-1.5 text-xs leading-5 text-stone-500">
+              This command is not available for the latest room state.
+            </p>
+          ) : null}
           {decisionPreview ? (
             <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm leading-5 text-amber-100">
               {decisionPreview}
