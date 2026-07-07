@@ -47,7 +47,7 @@ Built-in playbooks are available when creating a room. V0 includes Ship Small Fe
 
 The Needs Me queue is generated from room signals, not generic activity. It surfaces unresolved asks, blocked or failed runs, failed gates, and ready artifacts through the cockpit and `GET /api/needs-me`.
 
-The Daily Brief is generated from stored room signals and groups work into shipped, ready, blocked, failed, active, and recommended next actions. It is visible in the cockpit and available at `GET /api/briefs/daily`.
+The Daily Brief is generated from stored room signals and groups work into shipped, ready, blocked, failed, active, and recommended next actions. It is visible in the cockpit and available at `GET /api/briefs/daily`. The cockpit can also save a local Markdown snapshot under `runs/daily-briefs/` and reopen the latest saved snapshot.
 
 Founder actions are persisted with each room. Approve/reject close the room, request-fix and snooze return it to idle, and retry starts a new run using the latest room run mode. A draft room note is sent with these actions when present, which makes request-fix and retry instructions available to the next run prompt.
 
@@ -61,6 +61,8 @@ pnpm check
 
 - `GET /api/runs/:id/prompt` returns the captured prompt for a run.
 - `GET /api/briefs/daily` returns the current local Daily Brief.
+- `POST /api/briefs/daily/save` writes the current Daily Brief Markdown snapshot to local ignored storage.
+- `GET /api/briefs/daily/latest-snapshot` returns the latest saved Daily Brief snapshot.
 - `GET /api/folders` lists child directories under the local fleet root for the add-project folder browser.
 - `GET /api/products/:id/memory` returns local Product Memory Markdown sections.
 - `POST /api/products/:id/memory/:section` saves a Product Memory section.

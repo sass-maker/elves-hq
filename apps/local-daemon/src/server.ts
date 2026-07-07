@@ -65,6 +65,16 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    if (request.method === "POST" && url.pathname === "/api/briefs/daily/save") {
+      sendJson(response, 200, store.saveDailyBriefSnapshot());
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/briefs/daily/latest-snapshot") {
+      sendJson(response, 200, store.getLatestDailyBriefSnapshot());
+      return;
+    }
+
     if (request.method === "GET" && url.pathname === "/api/fm/feed") {
       sendJson(response, 200, store.getElfFmFeed());
       return;

@@ -41,6 +41,7 @@ const projectRoot = fileURLToPath(new URL("../../../", import.meta.url));
 const fleetRoot = resolve(projectRoot, "..");
 const memoryRoot = fileURLToPath(new URL("../../../memory/", import.meta.url));
 const transcriptsRoot = fileURLToPath(new URL("../../../runs/room-transcripts/", import.meta.url));
+const dailyBriefSnapshotsRoot = fileURLToPath(new URL("../../../runs/daily-briefs/", import.meta.url));
 const hiddenFolderNames = new Set([".git", ".next", ".turbo", ".vercel", "coverage", "data", "dist", "node_modules", "runs"]);
 
 interface RoomRow {
@@ -215,6 +216,35 @@ export class WorkspaceStore {
     return {
       brief,
       markdown: renderDailyBriefMarkdown(brief)
+    };
+  }
+
+  saveDailyBriefSnapshot(): { brief: DailyBrief; markdown: string; outputPath: string } {
+    const { brief, markdown } = this.getDailyBriefMarkdown();
+    mkdirSync(dailyBriefSnapshotsRoot, { recursive: true });
+    const dateKey = new Date(brief.generatedAt).toISOString().slice(0, 10);
+    const outputPath = resolve(dailyBriefSnapshotsRoot, `${dateKey}.md`);
+    writeFileSync(outputPath, `${markdown.trimEnd()}\n`);
+    return { brief, markdown, outputPath };
+  }
+
+  getLatestDailyBriefSnapshot(): { outputPath: string; markdown: string } {
+    if (!existsSync(dailyBriefSnapshotsRoot)) {
+      throw new Error("No Daily Brief snapshot has been saved yet.");
+    }
+
+    const latest = readdirSync(dailyBriefSnapshotsRoot)
+      .filter((entry) => /^\d{4}-\d{2}-\d{2}\.md$/.test(entry))
+      .sort()
+      .at(-1);
+    if (!latest) {
+      throw new Error("No Daily Brief snapshot has been saved yet.");
+    }
+
+    const outputPath = resolve(dailyBriefSnapshotsRoot, latest);
+    return {
+      outputPath,
+      markdown: readFileSync(outputPath, "utf8")
     };
   }
 

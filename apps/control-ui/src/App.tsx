@@ -267,6 +267,7 @@ export function App() {
   const [decisionPreview, setDecisionPreview] = useState<Record<string, string>>({});
   const [dailyBriefMarkdown, setDailyBriefMarkdown] = useState<string>("");
   const [dailyBriefExportStatus, setDailyBriefExportStatus] = useState<string>("");
+  const [dailyBriefSnapshotStatus, setDailyBriefSnapshotStatus] = useState<string>("");
   const [decisionItems, setDecisionItems] = useState<DecisionItem[]>(buildDecisionItems(seedWorkspace.rooms));
   const [dailyBrief, setDailyBrief] = useState<DailyBrief>(buildDailyBrief(seedWorkspace));
   const [elfFmFeed, setElfFmFeed] = useState<ElfFmFeed>(buildElfFmFeed(seedWorkspace));
@@ -1211,6 +1212,32 @@ export function App() {
     setDailyBriefExportStatus("Markdown ready.");
   };
 
+  const saveDailyBriefSnapshot = async () => {
+    const response = await fetch(`${daemonBaseUrl}/api/briefs/daily/save`, { method: "POST" });
+    if (!response.ok) {
+      setDailyBriefSnapshotStatus("Daily Brief snapshot failed.");
+      return;
+    }
+
+    const body = (await response.json()) as { markdown: string; brief: DailyBrief; outputPath: string };
+    setDailyBrief(body.brief);
+    setDailyBriefMarkdown(body.markdown);
+    setDailyBriefSnapshotStatus(`Saved ${body.outputPath}`);
+  };
+
+  const openLatestDailyBriefSnapshot = async () => {
+    const response = await fetch(`${daemonBaseUrl}/api/briefs/daily/latest-snapshot`);
+    if (!response.ok) {
+      const body = (await response.json().catch(() => ({ error: "No Daily Brief snapshot saved yet." }))) as { error?: string };
+      setDailyBriefSnapshotStatus(body.error ?? "No Daily Brief snapshot saved yet.");
+      return;
+    }
+
+    const body = (await response.json()) as { markdown: string; outputPath: string };
+    setDailyBriefMarkdown(body.markdown);
+    setDailyBriefSnapshotStatus(`Opened ${body.outputPath}`);
+  };
+
   return (
     <main
       className="dark-cockpit grid h-screen min-h-[760px] min-w-[1040px] gap-0 bg-[radial-gradient(circle_at_70%_8%,rgba(16,185,129,0.12),transparent_24%),radial-gradient(circle_at_15%_20%,rgba(59,130,246,0.10),transparent_26%),#080b0f] p-2.5 text-stone-100 max-lg:flex max-lg:h-auto max-lg:min-w-0 max-lg:flex-col max-lg:gap-2.5"
@@ -1420,7 +1447,10 @@ export function App() {
             selectedProductId={selectedProductId}
             markdownPreview={dailyBriefMarkdown}
             exportStatus={dailyBriefExportStatus}
+            snapshotStatus={dailyBriefSnapshotStatus}
             onExportMarkdown={exportDailyBriefMarkdown}
+            onSaveSnapshot={saveDailyBriefSnapshot}
+            onOpenLatestSnapshot={openLatestDailyBriefSnapshot}
             onOpenRoom={(item) => {
               setSelectedProductId(item.productId);
               setSelectedRoomId(item.roomId);
@@ -2383,14 +2413,20 @@ function DailyBriefPanel({
   selectedProductId,
   markdownPreview,
   exportStatus,
+  snapshotStatus,
   onExportMarkdown,
+  onSaveSnapshot,
+  onOpenLatestSnapshot,
   onOpenRoom
 }: {
   brief: DailyBrief;
   selectedProductId: string;
   markdownPreview: string;
   exportStatus: string;
+  snapshotStatus: string;
   onExportMarkdown: () => void;
+  onSaveSnapshot: () => void;
+  onOpenLatestSnapshot: () => void;
   onOpenRoom: (item: DailyBriefItem) => void;
 }) {
   const sections: DailyBriefSection[] = ["shipped", "ready", "blocked", "failed", "active"];
@@ -2415,6 +2451,14 @@ function DailyBriefPanel({
           <Button variant="outline" size="sm" type="button" onClick={onExportMarkdown}>
             <FileText size={14} />
             Brief
+          </Button>
+          <Button variant="outline" size="sm" type="button" onClick={onSaveSnapshot}>
+            <CheckCircle2 size={14} />
+            Save
+          </Button>
+          <Button variant="outline" size="sm" type="button" onClick={onOpenLatestSnapshot}>
+            <ScrollText size={14} />
+            Latest
           </Button>
           <Badge variant={visibleRecommendations.length > 0 ? "blue" : "secondary"}>
             {visibleRecommendations.length > 0 ? `${visibleRecommendations.length} next` : "No asks"}
@@ -2480,6 +2524,11 @@ function DailyBriefPanel({
         {exportStatus ? (
           <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-2 py-1.5 text-xs font-semibold text-emerald-900">
             {exportStatus}
+          </div>
+        ) : null}
+        {snapshotStatus ? (
+          <div className="rounded-lg border border-blue-100 bg-blue-50 px-2 py-1.5 text-xs font-semibold text-blue-950">
+            {snapshotStatus}
           </div>
         ) : null}
         {markdownPreview ? (
