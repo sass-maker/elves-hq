@@ -126,6 +126,14 @@ type TerminalDrawerEntry = {
   decisionItem?: DecisionItem;
 };
 
+type CreateTerminalInput = {
+  productId: string;
+  assignedElfId?: string;
+  playbookId?: string;
+  title: string;
+  acceptanceCriteria: string;
+};
+
 type RoomDeckScope = "active" | "all";
 
 type RoomSignalFilter = "all" | "needs" | "working" | "ready" | "failed" | "blocked" | "idle";
@@ -1180,10 +1188,10 @@ export function App() {
     }));
   };
 
-  const createRoom = async () => {
-    const title = newRoom.title.trim();
+  const createRoomFromInput = async (input: CreateTerminalInput) => {
+    const title = input.title.trim();
     if (!title) {
-      return;
+      return undefined;
     }
 
     const response = await fetch(`${daemonBaseUrl}/api/rooms`, {
@@ -1192,19 +1200,19 @@ export function App() {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        productId: newRoom.productId,
-        assignedElfId: newRoom.assignedElfId || undefined,
-        playbookId: newRoom.playbookId,
+        productId: input.productId,
+        assignedElfId: input.assignedElfId || undefined,
+        playbookId: input.playbookId,
         title,
-        acceptanceCriteria: newRoom.acceptanceCriteria
-          .split(/\r?\n/)
+        acceptanceCriteria: input.acceptanceCriteria
+          .split(/[\r\n;]+/)
           .map((line) => line.trim())
           .filter(Boolean)
       })
     });
 
     if (!response.ok) {
-      return;
+      return undefined;
     }
 
     const body = (await response.json()) as { room: Room; workspace: WorkspaceSeed };
@@ -1214,6 +1222,15 @@ export function App() {
     setElfFmFeed(buildElfFmFeed(body.workspace));
     setSelectedProductId(body.room.productId);
     setSelectedRoomId(body.room.id);
+    return body.room;
+  };
+
+  const createRoom = async () => {
+    const room = await createRoomFromInput(newRoom);
+    if (!room) {
+      return;
+    }
+
     setNewRoom((current) => ({ ...current, title: "", acceptanceCriteria: "" }));
     setIsCreatingRoom(false);
   };
@@ -1467,6 +1484,7 @@ export function App() {
         onStartRoomRun={(roomId, mode, prompt) => startRoomRun(roomId, mode, prompt)}
         onKillRoomRun={killLatestRun}
         onAnswerAsk={(roomId, askId, answer, note) => answerRoomAsk(roomId, askId, answer, note)}
+        onCreateTerminal={createRoomFromInput}
       />
     );
   }
@@ -1875,7 +1893,8 @@ function TerminalCommandCenter({
   onTerminalInstructionChange,
   onStartRoomRun,
   onKillRoomRun,
-  onAnswerAsk
+  onAnswerAsk,
+  onCreateTerminal
 }: {
   workspace: WorkspaceSeed;
   commandCenterRooms: CommandCenterRoomSet;
@@ -1897,10 +1916,20 @@ function TerminalCommandCenter({
   onStartRoomRun: (roomId: string, mode: ElfRun["mode"], prompt?: string) => void;
   onKillRoomRun: (roomId: string) => void;
   onAnswerAsk: (roomId: string, askId: string, answer: string, note?: string) => void;
+  onCreateTerminal: (input: CreateTerminalInput) => Promise<Room | undefined>;
 }) {
   const { primaryRoom, secondaryRooms, interventionRoom, interventionItem } = commandCenterRooms;
   const [focusedTerminalRoomId, setFocusedTerminalRoomId] = useState<string | null>(null);
   const [terminalDrawerLayouts, setTerminalDrawerLayouts] = useState<TerminalDrawerLayouts>(readStoredTerminalDrawerLayouts);
+  const [isCreatingTerminal, setIsCreatingTerminal] = useState(false);
+  const [terminalDraft, setTerminalDraft] = useState<CreateTerminalInput>({
+    productId: selectedProductId === "all" ? workspace.products[0]?.id ?? "" : selectedProductId,
+    assignedElfId: defaultRoomElfId(workspace),
+    playbookId: workspace.playbooks[0]?.id ?? "",
+    title: "",
+    acceptanceCriteria: ""
+  });
+  const [terminalCreateStatus, setTerminalCreateStatus] = useState("");
   const terminalCanvasRef = useRef<HTMLDivElement | null>(null);
   const activeCount = workspace.rooms.filter((room) => room.status === "working").length;
   const interventionCount = decisionItems.length;
@@ -1919,6 +1948,15 @@ function TerminalCommandCenter({
     window.localStorage.setItem(terminalDrawerLayoutStorageKey, JSON.stringify(terminalDrawerLayouts));
   }, [terminalDrawerLayouts]);
 
+  useEffect(() => {
+    setTerminalDraft((current) => ({
+      ...current,
+      productId: current.productId || (selectedProductId === "all" ? workspace.products[0]?.id ?? "" : selectedProductId),
+      assignedElfId: current.assignedElfId || defaultRoomElfId(workspace),
+      playbookId: current.playbookId || workspace.playbooks[0]?.id
+    }));
+  }, [selectedProductId, workspace]);
+
   const focusTerminal = (room: Room) => {
     setFocusedTerminalRoomId(room.id);
     onOpenRoom(room);
@@ -1927,6 +1965,19 @@ function TerminalCommandCenter({
   const selectTerminal = (room: Room) => {
     onOpenRoom(room);
     setFocusedTerminalRoomId(room.id);
+  };
+
+  const createTerminalDrawer = async () => {
+    const room = await onCreateTerminal(terminalDraft);
+    if (!room) {
+      setTerminalCreateStatus("Terminal creation failed.");
+      return;
+    }
+
+    setTerminalCreateStatus("");
+    setTerminalDraft((current) => ({ ...current, title: "", acceptanceCriteria: "" }));
+    setIsCreatingTerminal(false);
+    setFocusedTerminalRoomId(null);
   };
 
   const getTerminalDrawerLayout = (entry: TerminalDrawerEntry) => {
@@ -2064,6 +2115,16 @@ function TerminalCommandCenter({
             </button>
             <div className="flex items-center gap-3 text-slate-400">
               <button
+                className={cn(
+                  "rounded border px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.14em] transition-colors",
+                  isCreatingTerminal ? "border-blue-300/45 text-blue-100" : "border-slate-800 text-slate-400 hover:border-blue-300/40 hover:text-blue-100"
+                )}
+                type="button"
+                onClick={() => setIsCreatingTerminal((current) => !current)}
+              >
+                New terminal
+              </button>
+              <button
                 className="grid size-8 place-items-center rounded transition-colors hover:bg-slate-950 hover:text-blue-100"
                 type="button"
                 aria-label="Focus selected terminal"
@@ -2096,6 +2157,95 @@ function TerminalCommandCenter({
               <div className="grid size-8 place-items-center rounded-full border border-slate-700 bg-slate-950 font-mono text-[10px] text-blue-100">HQ</div>
             </div>
           </header>
+
+          {isCreatingTerminal && !focusedTerminalRoom ? (
+            <section className="mx-7 mt-7 border border-slate-800 bg-[#05080d] p-4 max-sm:mx-4">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div>
+                  <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-slate-600">New Codex terminal</p>
+                  <p className="text-sm font-semibold text-slate-200">Create a task drawer for an elf.</p>
+                </div>
+                <button
+                  className="text-slate-600 transition-colors hover:text-slate-300"
+                  type="button"
+                  aria-label="Close terminal creation"
+                  onClick={() => setIsCreatingTerminal(false)}
+                >
+                  <Minimize2 size={17} />
+                </button>
+              </div>
+              <div className="grid grid-cols-[1.1fr_minmax(220px,1.6fr)_1fr_1fr] gap-2 max-xl:grid-cols-2 max-sm:grid-cols-1">
+                <label className="grid gap-1 font-mono text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                  Project
+                  <select
+                    className="h-9 border border-slate-800 bg-slate-950 px-2 text-xs normal-case tracking-normal text-slate-200 outline-none"
+                    value={terminalDraft.productId}
+                    onChange={(event) => setTerminalDraft((current) => ({ ...current, productId: event.target.value }))}
+                  >
+                    {workspace.products.map((product) => (
+                      <option key={product.id} value={product.id}>
+                        {product.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="grid gap-1 font-mono text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                  Terminal
+                  <input
+                    className="h-9 border border-slate-800 bg-slate-950 px-2 text-xs normal-case tracking-normal text-slate-200 outline-none placeholder:text-slate-600"
+                    value={terminalDraft.title}
+                    onChange={(event) => setTerminalDraft((current) => ({ ...current, title: event.target.value }))}
+                    placeholder="Fix flaky onboarding test"
+                  />
+                </label>
+                <label className="grid gap-1 font-mono text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                  Elf
+                  <select
+                    className="h-9 border border-slate-800 bg-slate-950 px-2 text-xs normal-case tracking-normal text-slate-200 outline-none"
+                    value={terminalDraft.assignedElfId}
+                    onChange={(event) => setTerminalDraft((current) => ({ ...current, assignedElfId: event.target.value }))}
+                  >
+                    {workspace.elves.map((elf) => (
+                      <option key={elf.id} value={elf.id}>
+                        {elf.name} · {elf.role}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="grid gap-1 font-mono text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                  Playbook
+                  <select
+                    className="h-9 border border-slate-800 bg-slate-950 px-2 text-xs normal-case tracking-normal text-slate-200 outline-none"
+                    value={terminalDraft.playbookId}
+                    onChange={(event) => setTerminalDraft((current) => ({ ...current, playbookId: event.target.value }))}
+                  >
+                    {workspace.playbooks.map((playbook) => (
+                      <option key={playbook.id} value={playbook.id}>
+                        {playbook.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="mt-2 grid grid-cols-[minmax(0,1fr)_auto] gap-2 max-sm:grid-cols-1">
+                <input
+                  className="h-9 border border-slate-800 bg-slate-950 px-2 text-xs text-slate-200 outline-none placeholder:text-slate-600"
+                  value={terminalDraft.acceptanceCriteria}
+                  onChange={(event) => setTerminalDraft((current) => ({ ...current, acceptanceCriteria: event.target.value }))}
+                  placeholder="Optional acceptance criteria, separated by semicolons or short lines"
+                />
+                <button
+                  className="h-9 border border-blue-300/35 px-4 font-mono text-[10px] uppercase tracking-[0.14em] text-blue-100 transition-colors hover:border-blue-300/60 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-700"
+                  type="button"
+                  disabled={!terminalDraft.title.trim() || !terminalDraft.productId}
+                  onClick={createTerminalDrawer}
+                >
+                  Create
+                </button>
+              </div>
+              {terminalCreateStatus ? <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.14em] text-red-200">{terminalCreateStatus}</p> : null}
+            </section>
+          ) : null}
 
           {focusedTerminalRoom ? (
             <div className="grid min-h-[calc(100vh-112px)] grid-cols-[minmax(0,1fr)_220px] gap-2 p-7 max-xl:grid-cols-1 max-sm:p-4">
