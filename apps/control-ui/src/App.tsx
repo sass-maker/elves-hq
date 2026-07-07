@@ -4,6 +4,8 @@ import {
   BookOpenText,
   CalendarDays,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   CircleStop,
   ClipboardCheck,
   FileText,
@@ -94,6 +96,7 @@ const statusDot: Record<RoomStatus, string> = {
 
 const daemonBaseUrl = import.meta.env.VITE_DAEMON_URL ?? "http://127.0.0.1:4327";
 const paneLayoutStorageKey = "elves-hq:pane-layout:v1";
+const roomDeckPageSize = 4;
 
 type PaneLayout = {
   fleet: number;
@@ -232,6 +235,7 @@ export function App() {
   const [paneLayout, setPaneLayout] = useState<PaneLayout>(readStoredPaneLayout);
   const [roomWorkbenchTabsById, setRoomWorkbenchTabsById] = useState<Record<string, RoomWorkbenchTab>>({});
   const [focusedRoomId, setFocusedRoomId] = useState<string | null>(null);
+  const [roomDeckPage, setRoomDeckPage] = useState(0);
   const [newRoom, setNewRoom] = useState({
     productId: seedWorkspace.products[0]?.id ?? "",
     assignedElfId: defaultRoomElfId(seedWorkspace),
@@ -366,9 +370,9 @@ export function App() {
 
     return [...rooms].sort((a, b) => statusOrder.indexOf(a.status) - statusOrder.indexOf(b.status));
   }, [selectedProductId, workspace.rooms]);
-  const visibleRoomCards = visibleRooms.slice(0, 6);
 
-  const selectedRoom = workspace.rooms.find((room) => room.id === selectedRoomId) ?? visibleRooms[0] ?? workspace.rooms[0];
+  const filteredSelectedRoom = selectedProductId === "all" ? workspace.rooms.find((room) => room.id === selectedRoomId) : visibleRooms.find((room) => room.id === selectedRoomId);
+  const selectedRoom = filteredSelectedRoom ?? visibleRooms[0] ?? workspace.rooms[0];
   const selectedProduct = workspace.products.find((product) => product.id === (selectedProductId === "all" ? selectedRoom?.productId : selectedProductId));
   const selectedProductInspection = selectedProduct ? productInspections[selectedProduct.id] : undefined;
   const assignedTaskIds = useMemo(() => new Set(workspace.rooms.map((room) => room.taskId)), [workspace.rooms]);
@@ -402,6 +406,26 @@ export function App() {
       currentGoal: newProduct.currentGoal.trim()
     };
   }, [newProduct.currentGoal, newProduct.localPath, newProduct.name]);
+
+  const maxRoomDeckPage = Math.max(0, Math.ceil(visibleRooms.length / roomDeckPageSize) - 1);
+
+  useEffect(() => {
+    setRoomDeckPage(0);
+  }, [selectedProductId]);
+
+  useEffect(() => {
+    setRoomDeckPage((current) => Math.min(current, maxRoomDeckPage));
+  }, [maxRoomDeckPage]);
+
+  useEffect(() => {
+    const selectedIndex = visibleRooms.findIndex((room) => room.id === selectedRoom.id);
+    if (selectedIndex < 0) {
+      return;
+    }
+
+    const selectedPage = Math.floor(selectedIndex / roomDeckPageSize);
+    setRoomDeckPage((current) => (current === selectedPage ? current : selectedPage));
+  }, [selectedProductId, selectedRoom.id]);
 
   const startPaneResize = (pane: keyof PaneLayout, event: React.PointerEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -1320,20 +1344,15 @@ export function App() {
           </section>
         ) : null}
 
-        {visibleRooms.length > visibleRoomCards.length ? (
-          <p className="mb-2 text-xs font-semibold text-stone-500">Showing {visibleRoomCards.length} highest-signal rooms. Select a project or open a room for details.</p>
-        ) : null}
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(245px,1fr))] gap-3">
-          {visibleRoomCards.map((room) => (
-            <RoomCard
-              key={room.id}
-              room={room}
-              workspace={workspace}
-              selected={selectedRoom.id === room.id}
-              onSelect={() => setSelectedRoomId(room.id)}
-            />
-          ))}
-        </div>
+        <RoomDeck
+          rooms={visibleRooms}
+          workspace={workspace}
+          selectedRoomId={selectedRoom.id}
+          page={roomDeckPage}
+          pageSize={roomDeckPageSize}
+          onPageChange={setRoomDeckPage}
+          onSelectRoom={setSelectedRoomId}
+        />
       </section>
       ) : null}
 
@@ -1410,6 +1429,100 @@ function PaneResizeHandle({
       </div>
     </div>
   );
+}
+
+function RoomDeck({
+  rooms,
+  workspace,
+  selectedRoomId,
+  page,
+  pageSize,
+  onPageChange,
+  onSelectRoom
+}: {
+  rooms: Room[];
+  workspace: WorkspaceSeed;
+  selectedRoomId: string;
+  page: number;
+  pageSize: number;
+  onPageChange: (page: number) => void;
+  onSelectRoom: (roomId: string) => void;
+}) {
+  const pages = chunkArray(rooms, pageSize);
+  const pageCount = Math.max(1, pages.length);
+  const currentPage = Math.min(page, pageCount - 1);
+  const canGoPrevious = currentPage > 0;
+  const canGoNext = currentPage < pageCount - 1;
+
+  return (
+    <section className="grid gap-2" aria-label="Room deck">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[11px] font-extrabold uppercase text-stone-500">Room deck</p>
+          <p className="truncate text-sm text-stone-400">
+            {rooms.length === 0 ? "No rooms for this view" : `${rooms.length} room${rooms.length === 1 ? "" : "s"} · page ${currentPage + 1} of ${pageCount}`}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <Button
+            aria-label="Previous room page"
+            disabled={!canGoPrevious}
+            size="icon"
+            type="button"
+            variant="outline"
+            onClick={() => onPageChange(Math.max(0, currentPage - 1))}
+          >
+            <ChevronLeft size={16} />
+          </Button>
+          <Button
+            aria-label="Next room page"
+            disabled={!canGoNext}
+            size="icon"
+            type="button"
+            variant="outline"
+            onClick={() => onPageChange(Math.min(pageCount - 1, currentPage + 1))}
+          >
+            <ChevronRight size={16} />
+          </Button>
+        </div>
+      </div>
+
+      {rooms.length > 0 ? (
+        <div className="overflow-hidden rounded-xl border border-stone-800 bg-stone-950/60 p-2">
+          <div
+            className="flex transition-transform duration-300 ease-out"
+            style={{
+              transform: `translateX(-${currentPage * 100}%)`
+            }}
+          >
+            {pages.map((roomPage, pageIndex) => (
+              <div className="grid min-w-full grid-cols-[repeat(auto-fill,minmax(245px,1fr))] gap-3 pr-1" key={pageIndex}>
+                {roomPage.map((room) => (
+                  <RoomCard
+                    key={room.id}
+                    room={room}
+                    workspace={workspace}
+                    selected={selectedRoomId === room.id}
+                    onSelect={() => onSelectRoom(room.id)}
+                  />
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <p className="rounded-xl border border-stone-800 bg-stone-950/60 px-3 py-3 text-sm text-stone-500">No task rooms match this project filter yet.</p>
+      )}
+    </section>
+  );
+}
+
+function chunkArray<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
 }
 
 function readStoredPaneLayout(): PaneLayout {
