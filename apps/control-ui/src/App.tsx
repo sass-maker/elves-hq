@@ -221,6 +221,37 @@ const roomSortLabels: Record<RoomSortOrder, string> = {
   project: "Project name"
 };
 
+function runTimingLabel(run: ElfRun) {
+  const started = Date.parse(run.startedAt);
+  if (!Number.isFinite(started)) {
+    return run.exitCode === null ? "exit pending" : `exit ${run.exitCode}`;
+  }
+
+  const ended = run.endedAt ? Date.parse(run.endedAt) : Date.now();
+  if (!Number.isFinite(ended) || ended < started) {
+    return run.exitCode === null ? "exit pending" : `exit ${run.exitCode}`;
+  }
+
+  const duration = formatDuration(ended - started);
+  const exit = run.exitCode === null ? (run.status === "running" ? "running" : "exit pending") : `exit ${run.exitCode}`;
+  return `${duration} · ${exit}`;
+}
+
+function formatDuration(durationMs: number) {
+  const totalSeconds = Math.max(0, Math.round(durationMs / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes <= 0) {
+    return `${seconds}s`;
+  }
+  if (minutes < 60) {
+    return `${minutes}m ${seconds}s`;
+  }
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return `${hours}h ${remainingMinutes}m`;
+}
+
 const checkScriptKeys: CheckScriptKey[] = ["check", "typecheck", "test", "build"];
 const productPriorities: Product["priority"][] = ["P0", "P1", "P2"];
 const taskStatusTone: Record<Task["status"], "green" | "amber" | "red" | "blue" | "secondary"> = {
@@ -3222,7 +3253,7 @@ function RoomDetail({
                     </div>
                   ) : null}
                 </div>
-                <span className="ml-auto text-xs text-stone-500">{run.exitCode ?? "..."}</span>
+                <span className="ml-auto shrink-0 text-xs text-stone-500">{runTimingLabel(run)}</span>
               </div>
             ))}
           </div>
