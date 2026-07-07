@@ -892,6 +892,32 @@ export function App() {
     }));
   };
 
+  const refreshWorkspaceSnapshot = async () => {
+    const [workspaceResponse, needsResponse, briefResponse, fmResponse] = await Promise.all([
+      fetch(`${daemonBaseUrl}/api/workspace`),
+      fetch(`${daemonBaseUrl}/api/needs-me`),
+      fetch(`${daemonBaseUrl}/api/briefs/daily`),
+      fetch(`${daemonBaseUrl}/api/fm/feed`)
+    ]);
+
+    if (!workspaceResponse.ok || !needsResponse.ok || !briefResponse.ok || !fmResponse.ok) {
+      throw new Error("Workspace refresh failed.");
+    }
+
+    const [nextWorkspace, needsBody, nextBrief, nextFmFeed] = (await Promise.all([
+      workspaceResponse.json(),
+      needsResponse.json(),
+      briefResponse.json(),
+      fmResponse.json()
+    ])) as [WorkspaceSeed, { items: DecisionItem[] }, DailyBrief, ElfFmFeed];
+
+    setWorkspace(nextWorkspace);
+    setDecisionItems(needsBody.items);
+    setDailyBrief(nextBrief);
+    setElfFmFeed(nextFmFeed);
+    markSynced();
+  };
+
   const startRoomRun = async (roomId: string, mode: ElfRun["mode"], prompt?: string) => {
     const trimmedPrompt = prompt?.trim();
     const response = await fetch(`${daemonBaseUrl}/api/rooms/${roomId}/runs/start`, {
@@ -903,6 +929,11 @@ export function App() {
     });
 
     if (!response.ok) {
+      const body = (await response.json().catch(() => ({ error: `Run start failed with HTTP ${response.status}.` }))) as { error?: string };
+      const message = body.error ?? `Run start failed with HTTP ${response.status}.`;
+      setTerminalRunLogs((current) => ({ ...current, [roomId]: `[ERROR] ${message}\n` }));
+      setDecisionPreview((current) => ({ ...current, [roomId]: message }));
+      await refreshWorkspaceSnapshot().catch(() => setSyncState("stale"));
       return;
     }
 

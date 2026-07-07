@@ -127,6 +127,12 @@ Elves HQ MUST let the founder start or stop a room run directly from the command
 - **AND** selecting one starts the corresponding existing room run mode
 - **AND** captured output continues to appear in that terminal pane through the existing run-log polling
 
+#### Scenario: Terminal run start fails
+
+- **WHEN** the founder starts a run from a terminal pane and the daemon rejects the start
+- **THEN** the terminal pane shows the daemon error instead of failing silently
+- **AND** the cockpit refreshes room and decision state so any preflight log is visible
+
 #### Scenario: Founder stops a running room from a terminal pane
 
 - **WHEN** a task terminal has an active running run
@@ -272,4 +278,3 @@ Elves HQ MUST let the founder take common decision actions from a terminal drawe
 - **WHEN** a terminal drawer has an unresolved elf ask
 - **THEN** ask-answer options remain the primary terminal footer actions
 - **AND** generic decision buttons do not replace the ask options
-
