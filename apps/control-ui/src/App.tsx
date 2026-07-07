@@ -189,9 +189,8 @@ type ShellView = "overview" | "room";
 
 type CommandCenterRoomSet = {
   primaryRoom: Room | undefined;
-  secondaryRooms: Room[];
   interventionRoom: Room | undefined;
-  interventionItem: DecisionItem | undefined;
+  terminalEntries: TerminalDrawerEntry[];
 };
 
 type ProductPulseRow = {
@@ -560,17 +559,16 @@ export function App() {
     () => organizeRooms(scopedRooms, roomSignalFilter, roomSortOrder, productById),
     [productById, roomSignalFilter, roomSortOrder, scopedRooms]
   );
+  const commandCenterSourceRooms = useMemo(() => {
+    const activeRooms = productFilteredRooms.filter((room) => room.status !== "done");
+    return activeRooms.length > 0 ? activeRooms : productFilteredRooms;
+  }, [productFilteredRooms]);
   const commandCenterRooms = useMemo(
-    () => selectCommandCenterRooms(workspace, visibleRooms.length > 0 ? visibleRooms : workspace.rooms, selectedProductId, decisionItems),
-    [decisionItems, selectedProductId, visibleRooms, workspace]
+    () => selectCommandCenterRooms(workspace, commandCenterSourceRooms, selectedProductId, decisionItems),
+    [commandCenterSourceRooms, decisionItems, selectedProductId, workspace]
   );
   const commandCenterRoomIds = useMemo(
-    () =>
-      uniqueNonNullableRoomIds([
-        commandCenterRooms.primaryRoom?.id,
-        commandCenterRooms.interventionRoom?.id,
-        ...commandCenterRooms.secondaryRooms.map((room) => room.id)
-      ]),
+    () => uniqueNonNullableRoomIds(commandCenterRooms.terminalEntries.map((entry) => entry.room.id)),
     [commandCenterRooms]
   );
   const commandCenterRoomKey = commandCenterRoomIds.join("|");
@@ -1939,7 +1937,7 @@ function TerminalCommandCenter({
   onCreateTerminal: (input: CreateTerminalInput) => Promise<Room | undefined>;
   onDecisionAction: (roomId: string, action: DecisionAction, note?: string) => void;
 }) {
-  const { primaryRoom, secondaryRooms, interventionRoom, interventionItem } = commandCenterRooms;
+  const { primaryRoom, interventionRoom, terminalEntries } = commandCenterRooms;
   const [focusedTerminalRoomId, setFocusedTerminalRoomId] = useState<string | null>(null);
   const [terminalDrawerLayouts, setTerminalDrawerLayouts] = useState<TerminalDrawerLayouts>(readStoredTerminalDrawerLayouts);
   const [isCreatingTerminal, setIsCreatingTerminal] = useState(false);
@@ -1956,11 +1954,7 @@ function TerminalCommandCenter({
   const interventionCount = decisionItems.length;
   const systemLoad = Math.min(92, Math.max(8, activeCount * 18 + interventionCount * 9));
   const navProducts = workspace.products.slice(0, 7);
-  const terminalDrawerEntries = uniqueTerminalDrawerEntries([
-    interventionRoom ? { room: interventionRoom, role: "intervention", decisionItem: interventionItem } : undefined,
-    primaryRoom ? { room: primaryRoom, role: "primary" } : undefined,
-    ...secondaryRooms.map((room) => ({ room, role: "secondary" as const }))
-  ]);
+  const terminalDrawerEntries = terminalEntries;
   const terminalRooms = terminalDrawerEntries.map((entry) => entry.room);
   const focusedTerminalRoom = terminalRooms.find((room) => room.id === focusedTerminalRoomId) ?? (focusedTerminalRoomId ? terminalRooms[0] : undefined);
   const terminalDecisionByRoomId = new Map<string, DecisionItem>();
@@ -3263,20 +3257,19 @@ function selectCommandCenterRooms(workspace: WorkspaceSeed, rooms: Room[], selec
     (interventionItem ? workspace.rooms.find((room) => room.id === interventionItem.roomId) : undefined) ??
     rooms.find((room) => room.status === "asking" || room.status === "blocked" || room.status === "failed" || room.status === "ready");
 
-  const sortedRooms = [...rooms]
-    .filter((room) => room.status !== "done")
-    .sort((a, b) => statusOrder.indexOf(a.status) - statusOrder.indexOf(b.status) || compareRoomActivityDesc(a, b));
+  const sortedRooms = [...rooms].sort((a, b) => compareRoomPriority(a, b) || compareRoomActivityDesc(a, b));
   const primaryRoom = sortedRooms.find((room) => room.status === "working") ?? sortedRooms.find((room) => room.status === "ready") ?? sortedRooms[0];
-  const smallRooms = sortedRooms.filter((room) => room.id !== primaryRoom?.id && room.id !== interventionRoom?.id).slice(0, 2);
-  const fallbackRooms = workspace.rooms
-    .filter((room) => room.id !== primaryRoom?.id && room.id !== interventionRoom?.id && !smallRooms.some((item) => item.id === room.id))
-    .slice(0, Math.max(0, 2 - smallRooms.length));
-
+  const terminalEntries = uniqueTerminalDrawerEntries([
+    interventionRoom ? { room: interventionRoom, role: "intervention", decisionItem: interventionItem } : undefined,
+    primaryRoom ? { room: primaryRoom, role: "primary" } : undefined,
+    ...sortedRooms
+      .filter((room) => room.id !== primaryRoom?.id && room.id !== interventionRoom?.id)
+      .map((room) => ({ room, role: "secondary" as const }))
+  ]);
   return {
     primaryRoom,
-    secondaryRooms: [...smallRooms, ...fallbackRooms].slice(0, 2),
     interventionRoom,
-    interventionItem
+    terminalEntries
   };
 }
 
