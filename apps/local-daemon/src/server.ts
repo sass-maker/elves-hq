@@ -237,6 +237,24 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    const runLogsMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/logs$/);
+    if (request.method === "GET" && runLogsMatch) {
+      const runId = runLogsMatch[1];
+      if (!/^run-[a-z0-9-]+$/i.test(runId)) {
+        sendJson(response, 400, { error: "Invalid run id" });
+        return;
+      }
+
+      const logsPath = fileURLToPath(new URL(`${runId}/logs.txt`, `file://${runsRoot.endsWith("/") ? runsRoot : `${runsRoot}/`}`));
+      if (!existsSync(logsPath)) {
+        sendJson(response, 404, { error: "No run log captured for this run" });
+        return;
+      }
+
+      sendJson(response, 200, { runId, logs: readFileSync(logsPath, "utf8") });
+      return;
+    }
+
     const diffMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/diff$/);
     if (request.method === "GET" && diffMatch) {
       const runId = diffMatch[1];

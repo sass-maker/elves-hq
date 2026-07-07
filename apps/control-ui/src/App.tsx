@@ -258,6 +258,7 @@ export function App() {
   const [roomNotes, setRoomNotes] = useState<Record<string, string>>({});
   const [roomRuns, setRoomRuns] = useState<Record<string, ElfRun[]>>({});
   const [promptPreview, setPromptPreview] = useState<Record<string, string>>({});
+  const [runLogPreview, setRunLogPreview] = useState<Record<string, string>>({});
   const [diffPreview, setDiffPreview] = useState<Record<string, string>>({});
   const [checkPreview, setCheckPreview] = useState<Record<string, string>>({});
   const [codevetterPreview, setCodevetterPreview] = useState<Record<string, string>>({});
@@ -747,6 +748,23 @@ export function App() {
 
     const body = (await response.json()) as { prompt: string };
     setPromptPreview((current) => ({ ...current, [roomId]: body.prompt || "Prompt file is empty." }));
+  };
+
+  const openLatestRunLog = async (roomId: string) => {
+    const run = roomRuns[roomId]?.[0];
+    if (!run) {
+      setRunLogPreview((current) => ({ ...current, [roomId]: "No run log has been captured yet." }));
+      return;
+    }
+
+    const response = await fetch(`${daemonBaseUrl}/api/runs/${run.id}/logs`);
+    if (!response.ok) {
+      setRunLogPreview((current) => ({ ...current, [roomId]: "No log file was found for the latest run." }));
+      return;
+    }
+
+    const body = (await response.json()) as { logs: string };
+    setRunLogPreview((current) => ({ ...current, [roomId]: body.logs || "Run log is empty." }));
   };
 
   const openLatestDiff = async (roomId: string) => {
@@ -1568,6 +1586,7 @@ export function App() {
           runs={roomRuns[selectedRoom.id] ?? []}
           diffPreview={diffPreview[selectedRoom.id]}
           promptPreview={promptPreview[selectedRoom.id]}
+          runLogPreview={runLogPreview[selectedRoom.id]}
           checkPreview={checkPreview[selectedRoom.id]}
           codevetterPreview={codevetterPreview[selectedRoom.id]}
           cleanupPreview={cleanupPreview[selectedRoom.id]}
@@ -1595,6 +1614,7 @@ export function App() {
           onStartCodexReadOnly={(prompt) => startRoomRun(selectedRoom.id, "codex-readonly", prompt)}
           onStartMode={(mode, prompt) => startRoomRun(selectedRoom.id, mode, prompt)}
           onOpenPrompt={() => openLatestPrompt(selectedRoom.id)}
+          onOpenRunLog={() => openLatestRunLog(selectedRoom.id)}
           onOpenDiff={() => openLatestDiff(selectedRoom.id)}
           onRunCheck={(scriptKey) => runLatestCheck(selectedRoom.id, scriptKey)}
           onRunCodeVetter={() => runLatestCodeVetter(selectedRoom.id)}
@@ -2828,6 +2848,7 @@ function RoomDetail({
   workspace,
   runs,
   promptPreview,
+  runLogPreview,
   diffPreview,
   checkPreview,
   codevetterPreview,
@@ -2856,6 +2877,7 @@ function RoomDetail({
   onStartCodexReadOnly,
   onStartMode,
   onOpenPrompt,
+  onOpenRunLog,
   onOpenDiff,
   onRunCheck,
   onRunCodeVetter,
@@ -2872,6 +2894,7 @@ function RoomDetail({
   workspace: WorkspaceSeed;
   runs: ElfRun[];
   promptPreview?: string;
+  runLogPreview?: string;
   diffPreview?: string;
   checkPreview?: string;
   codevetterPreview?: string;
@@ -2900,6 +2923,7 @@ function RoomDetail({
   onStartCodexReadOnly: (prompt?: string) => void;
   onStartMode: (mode: ElfRun["mode"], prompt?: string) => void;
   onOpenPrompt: () => void;
+  onOpenRunLog: () => void;
   onOpenDiff: () => void;
   onRunCheck: (scriptKey: CheckGateSelection) => void;
   onRunCodeVetter: () => void;
@@ -3006,6 +3030,7 @@ function RoomDetail({
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onStartMode("worktree-dry-run", runInstructions)} disabled={Boolean(worktreeBlocker)}><GitBranch size={15} />Draft</Button>
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onStartMode("codex-worktree", runInstructions)} disabled={Boolean(worktreeBlocker)}><Hammer size={15} />Build</Button>
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onOpenPrompt}><ScrollText size={15} />Prompt</Button>
+            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onOpenRunLog}><SquareTerminal size={15} />Log</Button>
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onGenerateTranscript}><FileText size={15} />Doc</Button>
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onOpenDiff}><GitBranch size={15} />Diff</Button>
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onRunCheck(checkGateSelection)}><TestTube2 size={15} />Check</Button>
@@ -3115,6 +3140,7 @@ function RoomDetail({
         activeTab={activeWorkbenchTab}
         outputs={[
           { id: "prompt", title: "Run prompt", icon: <ScrollText size={16} />, body: promptPreview },
+          { id: "run-log", title: "Run log", icon: <SquareTerminal size={16} />, body: runLogPreview },
           { id: "transcript", title: "Room transcript", icon: <FileText size={16} />, body: transcriptPreview },
           { id: "diff", title: "Diff preview", icon: <GitBranch size={16} />, body: diffPreview },
           { id: "check", title: "Check output", icon: <TestTube2 size={16} />, body: checkPreview },

@@ -129,6 +129,7 @@ The V0 daemon MUST be able to start, log, persist, inspect, and stop room-scoped
 - **WHEN** the founder starts a dry run from a room
 - **THEN** the daemon creates a run record
 - **AND** process output is appended to the room logs
+- **AND** stdout/stderr output is captured to a durable run log artifact
 - **AND** the room status updates from working to ready, failed, blocked, or killed when the process exits
 
 #### Scenario: Founder starts read-only Codex
@@ -136,6 +137,7 @@ The V0 daemon MUST be able to start, log, persist, inspect, and stop room-scoped
 - **WHEN** the founder starts a read-only Codex inspection
 - **THEN** the daemon launches `codex exec` with read-only sandboxing
 - **AND** Codex output is appended to room logs
+- **AND** stdout/stderr output is captured to a durable run log artifact
 - **AND** the daemon can stop the process if the founder kills it or it exceeds the runtime cap
 
 #### Scenario: Founder inspects a run prompt
@@ -144,12 +146,18 @@ The V0 daemon MUST be able to start, log, persist, inspect, and stop room-scoped
 - **THEN** the daemon writes the prompt context to a local prompt artifact
 - **AND** the cockpit can preview the captured prompt for that run
 
+#### Scenario: Founder inspects a run log
+
+- **WHEN** a room run has captured stdout or stderr
+- **THEN** the daemon can return the durable run log for preview in the room
+
 #### Scenario: Founder starts a worktree-backed run
 
 - **WHEN** the founder starts a worktree-backed room run
 - **THEN** the daemon creates an isolated git worktree and branch for the run
 - **AND** the daemon persists the run workspace path and branch name on the run record
 - **AND** process output is appended to room logs
+- **AND** stdout/stderr output is captured to a durable run log artifact
 - **AND** any resulting diff is captured as a room artifact
 - **AND** the original product checkout remains clean
 

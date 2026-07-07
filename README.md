@@ -37,7 +37,7 @@ Worktree cleanup removes the generated `runs/<run-id>/worktree` checkout after r
 
 Rooms can be created directly in the cockpit. Each room creates a task, assigns the default builder elf, stores acceptance criteria, and can then launch dry-run, read-only Codex, worktree dry-run, or worktree Codex modes.
 
-Every room run captures its prompt at `runs/<run-id>/prompt.md`. Generated prompts include acceptance criteria, founder room notes, fix requests, prior decisions, artifacts, and recent logs so retries carry useful context instead of starting cold.
+Every room run captures its prompt at `runs/<run-id>/prompt.md` and stdout/stderr at `runs/<run-id>/logs.txt`. Generated prompts include acceptance criteria, founder room notes, fix requests, prior decisions, artifacts, and recent logs so retries carry useful context instead of starting cold.
 
 Each room also has a next-run instruction composer. Use it for tactical one-off guidance before pressing Dry, Read, Draft, or Build; the daemon embeds those instructions inside the generated run prompt and clears the draft after launch.
 
@@ -60,6 +60,7 @@ pnpm check
 ## Local API Notes
 
 - `GET /api/runs/:id/prompt` returns the captured prompt for a run.
+- `GET /api/runs/:id/logs` returns the captured stdout/stderr log for a run.
 - `GET /api/briefs/daily` returns the current local Daily Brief.
 - `POST /api/briefs/daily/save` writes the current Daily Brief Markdown snapshot to local ignored storage.
 - `GET /api/briefs/daily/latest-snapshot` returns the latest saved Daily Brief snapshot.

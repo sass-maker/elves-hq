@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -453,15 +453,22 @@ export class RoomProcessManager {
   }
 
   private attachLogging(run: ElfRun, child: ChildProcessWithoutNullStreams) {
+    this.initializeRunLog(run);
+
     child.stdout.on("data", (chunk: Buffer) => {
-      this.writeLines(run.roomId, "info", chunk.toString("utf8"));
+      const output = chunk.toString("utf8");
+      this.appendRunOutput(run, "stdout", output);
+      this.writeLines(run.roomId, "info", output);
     });
 
     child.stderr.on("data", (chunk: Buffer) => {
-      this.writeLines(run.roomId, "warning", chunk.toString("utf8"));
+      const output = chunk.toString("utf8");
+      this.appendRunOutput(run, "stderr", output);
+      this.writeLines(run.roomId, "warning", output);
     });
 
     child.on("error", (error) => {
+      this.appendRunOutput(run, "error", error.message);
       this.store.appendRoomLog(run.roomId, "error", error.message);
       this.store.finishRun(run.id, "failed", null);
       this.clearRun(run.id);
@@ -474,9 +481,11 @@ export class RoomProcessManager {
       }
       this.clearRun(run.id);
       if (signal) {
+        this.appendRunOutput(run, "exit", `killed by ${signal}`);
         this.store.finishRun(run.id, "killed", code);
         return;
       }
+      this.appendRunOutput(run, "exit", `code ${code ?? "unknown"}`);
       this.store.finishRun(run.id, code === 0 ? "completed" : "failed", code);
     });
   }
@@ -499,6 +508,25 @@ export class RoomProcessManager {
       summary: `Captured prompt context at ${promptPath}`,
       status: "ready"
     });
+  }
+
+  private initializeRunLog(run: ElfRun) {
+    const logPath = resolve(runsRoot, run.id, "logs.txt");
+    mkdirSync(dirname(logPath), { recursive: true });
+    writeFileSync(logPath, `# Run log for ${run.id}\n# Started: ${run.startedAt}\n# Mode: ${run.mode}\n# Command: ${run.command}\n\n`);
+    this.store.addArtifact(run.roomId, {
+      type: "log",
+      title: `Run log for ${run.id}`,
+      summary: `Captured stdout/stderr at ${logPath}`,
+      status: "ready"
+    });
+  }
+
+  private appendRunOutput(run: ElfRun, stream: "stdout" | "stderr" | "error" | "exit", output: string) {
+    const logPath = resolve(runsRoot, run.id, "logs.txt");
+    mkdirSync(dirname(logPath), { recursive: true });
+    const normalizedOutput = output.endsWith("\n") ? output : `${output}\n`;
+    appendFileSync(logPath, `[${new Date().toISOString()}] ${stream}\n${normalizedOutput}\n`);
   }
 
   private writeLines(roomId: string, level: "info" | "warning", output: string) {

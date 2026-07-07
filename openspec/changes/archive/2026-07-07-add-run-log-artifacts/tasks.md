@@ -1,0 +1,6 @@
+- [x] Update the task-room spec with durable run log behavior.
+- [x] Capture stdout/stderr chunks into `runs/<run-id>/logs.txt`.
+- [x] Expose a local run log endpoint.
+- [x] Add run log preview to the room workbench.
+- [x] Update README and `PROJECT_STATUS.md`.
+- [x] Run `pnpm check` and `openspec validate --all --strict`.
