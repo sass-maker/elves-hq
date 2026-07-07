@@ -283,6 +283,19 @@ function roomProduct(workspace: WorkspaceSeed, room: Room): Product {
   return product;
 }
 
+function uniqueRooms(rooms: Array<Room | undefined>): Room[] {
+  const seen = new Set<string>();
+  const result: Room[] = [];
+  for (const room of rooms) {
+    if (!room || seen.has(room.id)) {
+      continue;
+    }
+    seen.add(room.id);
+    result.push(room);
+  }
+  return result;
+}
+
 function roomElf(workspace: WorkspaceSeed, room: Room) {
   const elf = workspace.elves.find((item) => item.id === room.assignedElfId);
   if (!elf) {
@@ -1868,10 +1881,24 @@ function TerminalCommandCenter({
   onAnswerAsk: (roomId: string, askId: string, answer: string, note?: string) => void;
 }) {
   const { primaryRoom, secondaryRooms, interventionRoom, interventionItem } = commandCenterRooms;
+  const [focusedTerminalRoomId, setFocusedTerminalRoomId] = useState<string | null>(null);
   const activeCount = workspace.rooms.filter((room) => room.status === "working").length;
   const interventionCount = decisionItems.length;
   const systemLoad = Math.min(92, Math.max(8, activeCount * 18 + interventionCount * 9));
   const navProducts = workspace.products.slice(0, 7);
+  const terminalRooms = uniqueRooms([primaryRoom, ...secondaryRooms, interventionRoom]);
+  const focusedTerminalRoom = terminalRooms.find((room) => room.id === focusedTerminalRoomId) ?? (focusedTerminalRoomId ? terminalRooms[0] : undefined);
+  const focusedDecisionItem = focusedTerminalRoom?.id === interventionRoom?.id ? interventionItem : undefined;
+
+  const focusTerminal = (room: Room) => {
+    setFocusedTerminalRoomId(room.id);
+    onOpenRoom(room);
+  };
+
+  const selectTerminal = (room: Room) => {
+    onOpenRoom(room);
+    setFocusedTerminalRoomId(room.id);
+  };
 
   return (
     <main className="terminal-shell terminal-grid-bg min-h-screen min-w-[1080px] bg-[#020408] p-6 text-slate-100 max-lg:min-w-0 max-lg:p-3">
@@ -1880,7 +1907,7 @@ function TerminalCommandCenter({
           <button
             className="mb-7 grid h-9 w-9 place-items-center rounded-md text-slate-400 transition-colors hover:bg-slate-900 hover:text-blue-200"
             type="button"
-            aria-label="Open terminal inspector"
+            aria-label="Open terminal workbench"
             onClick={onOpenRoomView}
           >
             <ChevronLeft size={20} />
@@ -1891,7 +1918,7 @@ function TerminalCommandCenter({
               <SquareTerminal size={21} />
             </div>
             <div className="min-w-0">
-              <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">Local command room</p>
+              <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">Local Codex dashboard</p>
               <h1 className="text-[26px] font-semibold leading-7 tracking-normal text-blue-100">Elves HQ</h1>
               <p className="mt-1 font-mono text-[10px] text-slate-500">v0.local</p>
             </div>
@@ -1919,7 +1946,7 @@ function TerminalCommandCenter({
               onClick={onOpenRoomView}
             >
               <SquareTerminal size={18} />
-              Rooms
+              Terminals
             </button>
             <div className="flex min-h-11 items-center gap-3 border-r-2 border-transparent px-3 text-left font-mono text-xs uppercase tracking-[0.18em] text-slate-600">
               <MapIcon size={18} />
@@ -1974,10 +2001,20 @@ function TerminalCommandCenter({
               {selectedProductId === "all" ? "All projects" : workspace.products.find((product) => product.id === selectedProductId)?.name ?? "All projects"}
             </button>
             <div className="flex items-center gap-3 text-slate-400">
-              <button className="grid size-8 place-items-center rounded transition-colors hover:bg-slate-950 hover:text-blue-100" type="button" aria-label="Open terminal inspector" onClick={onOpenRoomView}>
+              <button
+                className="grid size-8 place-items-center rounded transition-colors hover:bg-slate-950 hover:text-blue-100"
+                type="button"
+                aria-label="Focus selected terminal"
+                onClick={() => {
+                  const room = terminalRooms.find((candidate) => candidate.id === selectedRoomId) ?? primaryRoom ?? terminalRooms[0];
+                  if (room) {
+                    focusTerminal(room);
+                  }
+                }}
+              >
                 <Maximize2 size={18} />
               </button>
-              <button className="grid size-8 place-items-center rounded transition-colors hover:bg-slate-950 hover:text-blue-100" type="button" aria-label="Open terminal inspector" onClick={onOpenRoomView}>
+              <button className="grid size-8 place-items-center rounded transition-colors hover:bg-slate-950 hover:text-blue-100" type="button" aria-label="Open terminal workbench" onClick={onOpenRoomView}>
                 <Settings2 size={18} />
               </button>
               <button
@@ -1998,8 +2035,71 @@ function TerminalCommandCenter({
             </div>
           </header>
 
-          <div className="grid min-h-[calc(100vh-112px)] grid-cols-[minmax(0,1fr)_410px] gap-2 p-7 max-xl:grid-cols-1 max-sm:p-4">
-            <div className="grid auto-rows-[minmax(246px,1fr)] grid-cols-2 gap-2 max-lg:grid-cols-1">
+          {focusedTerminalRoom ? (
+            <div className="grid min-h-[calc(100vh-112px)] grid-cols-[minmax(0,1fr)_220px] gap-2 p-7 max-xl:grid-cols-1 max-sm:p-4">
+              <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-2">
+                <div className="flex min-h-12 items-center justify-between border border-slate-800 bg-[#05080d] px-4">
+                  <div className="min-w-0">
+                    <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-slate-500">Focused terminal drawer</p>
+                    <p className="truncate text-sm font-semibold text-slate-200">{focusedTerminalRoom.title}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      className="rounded border border-slate-800 px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-slate-400 transition-colors hover:border-blue-300/40 hover:text-blue-100"
+                      type="button"
+                      onClick={onOpenRoomView}
+                    >
+                      Inspect
+                    </button>
+                    <button
+                      className="grid size-8 place-items-center rounded border border-slate-800 text-slate-400 transition-colors hover:border-blue-300/40 hover:text-blue-100"
+                      type="button"
+                      aria-label="Exit focused terminal"
+                      onClick={() => setFocusedTerminalRoomId(null)}
+                    >
+                      <Minimize2 size={17} />
+                    </button>
+                  </div>
+                </div>
+                <TerminalPanel
+                  room={focusedTerminalRoom}
+                  workspace={workspace}
+                  runs={roomRuns[focusedTerminalRoom.id] ?? []}
+                  runLog={terminalRunLogs[focusedTerminalRoom.id] ?? ""}
+                  instructionDraft={terminalInstructions[focusedTerminalRoom.id] ?? ""}
+                  decisionItem={focusedDecisionItem}
+                  selected
+                  span="focused"
+                  isTerminalFocused
+                  variant={focusedTerminalRoom.id === interventionRoom?.id ? "alert" : "default"}
+                  canRunCommands={daemonState === "local"}
+                  onOpen={onOpenRoomView}
+                  onFocus={() => setFocusedTerminalRoomId(null)}
+                  onInstructionChange={(value) => onTerminalInstructionChange(focusedTerminalRoom.id, value)}
+                  onStartMode={(mode, prompt) => onStartRoomRun(focusedTerminalRoom.id, mode, prompt)}
+                  onKillRun={() => onKillRoomRun(focusedTerminalRoom.id)}
+                  onAnswerAsk={(askId, answer, note) => onAnswerAsk(focusedTerminalRoom.id, askId, answer, note)}
+                />
+              </div>
+
+              <aside className="terminal-scroll min-h-0 overflow-auto border border-slate-800 bg-[#05080d] p-3">
+                <p className="mb-3 px-1 font-mono text-[10px] uppercase tracking-[0.2em] text-slate-600">Terminal drawers</p>
+                <div className="grid gap-2">
+                  {terminalRooms.map((room) => (
+                    <TerminalRailButton
+                      key={room.id}
+                      room={room}
+                      workspace={workspace}
+                      selected={room.id === focusedTerminalRoom.id}
+                      onClick={() => selectTerminal(room)}
+                    />
+                  ))}
+                </div>
+              </aside>
+            </div>
+          ) : (
+            <div className="grid min-h-[calc(100vh-112px)] grid-cols-[minmax(0,1fr)_410px] gap-2 p-7 max-xl:grid-cols-1 max-sm:p-4">
+              <div className="grid auto-rows-[minmax(246px,1fr)] grid-cols-2 gap-2 max-lg:grid-cols-1">
               {primaryRoom ? (
                 <TerminalPanel
                   room={primaryRoom}
@@ -2011,13 +2111,14 @@ function TerminalCommandCenter({
                   span="large"
                   canRunCommands={daemonState === "local"}
                   onOpen={() => onOpenRoom(primaryRoom)}
+                  onFocus={() => focusTerminal(primaryRoom)}
                   onInstructionChange={(value) => onTerminalInstructionChange(primaryRoom.id, value)}
                   onStartMode={(mode, prompt) => onStartRoomRun(primaryRoom.id, mode, prompt)}
                   onKillRun={() => onKillRoomRun(primaryRoom.id)}
                   onAnswerAsk={(askId, answer, note) => onAnswerAsk(primaryRoom.id, askId, answer, note)}
                 />
               ) : (
-                <TerminalEmptyPanel title="No active terminals" body="Add a local project and create a task terminal from the inspector." />
+                <TerminalEmptyPanel title="No active terminals" body="Add a local project and create a Codex terminal from the workbench." />
               )}
               {secondaryRooms.map((room) => (
                 <TerminalPanel
@@ -2030,6 +2131,7 @@ function TerminalCommandCenter({
                   selected={room.id === selectedRoomId}
                   canRunCommands={daemonState === "local"}
                   onOpen={() => onOpenRoom(room)}
+                  onFocus={() => focusTerminal(room)}
                   onInstructionChange={(value) => onTerminalInstructionChange(room.id, value)}
                   onStartMode={(mode, prompt) => onStartRoomRun(room.id, mode, prompt)}
                   onKillRun={() => onKillRoomRun(room.id)}
@@ -2053,6 +2155,7 @@ function TerminalCommandCenter({
                 variant="alert"
                 canRunCommands={daemonState === "local"}
                 onOpen={() => onOpenRoom(interventionRoom)}
+                onFocus={() => focusTerminal(interventionRoom)}
                 onInstructionChange={(value) => onTerminalInstructionChange(interventionRoom.id, value)}
                 onStartMode={(mode, prompt) => onStartRoomRun(interventionRoom.id, mode, prompt)}
                 onKillRun={() => onKillRoomRun(interventionRoom.id)}
@@ -2061,7 +2164,8 @@ function TerminalCommandCenter({
             ) : (
               <TerminalEmptyPanel title="No intervention" body={elfFmFeed.globalStation.nowPlaying || "Elves are quiet. No founder decision is open."} variant="alert" />
             )}
-          </div>
+            </div>
+          )}
         </section>
       </div>
     </main>
@@ -2078,8 +2182,10 @@ function TerminalPanel({
   selected,
   variant = "default",
   span,
+  isTerminalFocused = false,
   canRunCommands,
   onOpen,
+  onFocus,
   onInstructionChange,
   onStartMode,
   onKillRun,
@@ -2093,9 +2199,11 @@ function TerminalPanel({
   decisionItem?: DecisionItem;
   selected: boolean;
   variant?: "default" | "alert";
-  span?: "large";
+  span?: "large" | "focused";
+  isTerminalFocused?: boolean;
   canRunCommands: boolean;
   onOpen: () => void;
+  onFocus: () => void;
   onInstructionChange: (value: string) => void;
   onStartMode: (mode: ElfRun["mode"], prompt?: string) => void;
   onKillRun: () => void;
@@ -2114,6 +2222,7 @@ function TerminalPanel({
       className={cn(
         "group relative flex min-h-0 flex-col overflow-hidden rounded-sm border bg-[#05080d] transition-colors",
         span === "large" && "col-span-2 max-lg:col-span-1",
+        span === "focused" && "min-h-[calc(100vh-198px)]",
         terminalToneClasses[tone].panel,
         selected && "ring-1 ring-blue-200/40"
       )}
@@ -2127,11 +2236,16 @@ function TerminalPanel({
           </span>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <button className={cn("transition-colors", terminalToneClasses[tone].icon)} type="button" aria-label={`Inspect ${room.title}`} onClick={onOpen}>
-            <Maximize2 size={17} />
+          <button
+            className={cn("transition-colors", terminalToneClasses[tone].icon)}
+            type="button"
+            aria-label={isTerminalFocused ? `Exit focused ${room.title}` : `Focus ${room.title}`}
+            onClick={onFocus}
+          >
+            {isTerminalFocused ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
           </button>
-          <button className="text-slate-600 transition-colors hover:text-slate-300" type="button" aria-label="Terminal options">
-            <Minimize2 size={17} />
+          <button className="text-slate-600 transition-colors hover:text-slate-300" type="button" aria-label={`Inspect ${room.title}`} onClick={onOpen}>
+            <Settings2 size={17} />
           </button>
         </div>
       </header>
@@ -2197,6 +2311,33 @@ function TerminalPanel({
         <GripVertical size={14} className="-rotate-45" />
       </div>
     </article>
+  );
+}
+
+function TerminalRailButton({ room, workspace, selected, onClick }: { room: Room; workspace: WorkspaceSeed; selected: boolean; onClick: () => void }) {
+  const product = roomProduct(workspace, room);
+  const tone = terminalToneForRoom(room, room.status === "failed" || room.status === "blocked" ? "alert" : "default");
+
+  return (
+    <button
+      className={cn(
+        "grid gap-1 border px-3 py-2 text-left transition-colors",
+        selected
+          ? "border-blue-300/40 bg-slate-950 text-slate-100"
+          : "border-slate-800 bg-[#020408] text-slate-500 hover:border-slate-700 hover:text-slate-200"
+      )}
+      type="button"
+      onClick={onClick}
+    >
+      <span className="flex min-w-0 items-center gap-2">
+        <span className={cn("size-1.5 shrink-0 rounded-full", terminalToneClasses[tone].dot)} />
+        <span className="truncate font-mono text-[10px] uppercase tracking-[0.14em]">{ttyLabel(room)}</span>
+      </span>
+      <span className="truncate text-xs font-semibold">{room.title}</span>
+      <span className="truncate font-mono text-[10px] uppercase tracking-[0.12em] text-slate-600">
+        {product.name} // {statusLabels[room.status]}
+      </span>
+    </button>
   );
 }
 
