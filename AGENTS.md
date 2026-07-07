@@ -6,7 +6,7 @@ Also read and follow the shared fleet-level agent standard at `../AGENTS.md`. Tr
 
 - **Purpose**: Elves HQ is a local-first control room for running Codex elves across the fleet.
 - **Stack**: pnpm workspace, Vite + React cockpit, Node local daemon using built-in SQLite, TypeScript core package.
-- **Local dev**: `pnpm install`, then run `pnpm dev:daemon` and `pnpm dev:ui` in separate terminals.
+- **Local dev**: `pnpm install`, then `pnpm dev` to run the local daemon and UI together. Root `pnpm dev` reuses a healthy daemon on port 4327 if one is already running. Use `pnpm dev:daemon` and `pnpm dev:ui` for split-terminal debugging.
 - **Checks**: `pnpm check`.
 - **Deploy**: none for V0. This project is local-only until it earns daily use.
 

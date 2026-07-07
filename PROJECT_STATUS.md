@@ -75,6 +75,7 @@ Elves HQ is a local-first founder cockpit for running Codex elves across a produ
 - Approved worktree diffs can be applied to a clean local product checkout after founder approval and passed gates; the daemon does not commit, push, deploy, or clean the generated worktree automatically.
 - The cockpit defaults to a dark command-room UI, reduces the overview to high-signal panels, and keeps the Daily Brief collapsed until opened.
 - The sidebar shows live or stale local sync state plus the latest successful local sync time, so stale daemon data is visible instead of silently looking current.
+- Root `pnpm dev` starts the UI plus a local daemon when needed, reuses a healthy daemon already running on port 4327, and keeps `pnpm dev:daemon` plus `pnpm dev:ui` available for split-terminal debugging.
 - Fleet Pulse shows simplified product-first status rows in the sidebar, with a dominant room signal, project name, status label, needs count, and click-to-filter behavior derived from existing room state.
 - The task-room pane uses a compact overview switcher so Needs Me, Elf FM, Backlog, and Daily Brief remain available with counts while only one overview panel is open at a time.
 - The cockpit has draggable local pane resize handles for the fleet sidebar and task-room list, persists the chosen widths in browser storage, and supports reset to the default command-room layout.

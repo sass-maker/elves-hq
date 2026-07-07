@@ -15,15 +15,14 @@ V0 is intentionally local-only. There is no auth, cloud API, widget layer, billi
 
 ## Local Dev
 
-Run the daemon and UI in two terminals:
+Run the local daemon and UI together:
 
 ```bash
 pnpm install
-pnpm dev:daemon
-pnpm dev:ui
+pnpm dev
 ```
 
-The UI runs on the local Vite URL printed by `pnpm dev:ui`. The local daemon defaults to `http://127.0.0.1:4327/` and stores local room data in `data/elves.db`. Room runs default to a 120 second runtime cap; override with `ELVES_HQ_RUN_TIMEOUT_MS`.
+`pnpm dev` reuses an already-running healthy daemon on `http://127.0.0.1:4327/`; otherwise it starts one before launching the UI. For split-terminal debugging, use `pnpm dev:daemon` and `pnpm dev:ui`. The UI runs on the local Vite URL printed by the UI process. The local daemon stores local room data in `data/elves.db`. Room runs default to a 120 second runtime cap; override with `ELVES_HQ_RUN_TIMEOUT_MS`.
 
 The add-project panel includes a local folder browser backed by the daemon. It lists child directories under the fleet root, lets you select a product folder without typing the path, and then reuses the existing read-only folder health preview before saving.
 
