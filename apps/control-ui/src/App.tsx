@@ -178,14 +178,6 @@ const decisionActionLabels: Record<DecisionAction, string> = {
   retry: "Retry"
 };
 
-const decisionActionTone: Record<DecisionAction, "default" | "outline" | "destructive"> = {
-  approve: "default",
-  request_fix: "outline",
-  reject: "destructive",
-  snooze: "outline",
-  retry: "outline"
-};
-
 const productStatuses: Product["status"][] = ["active", "maintain", "paused", "killed"];
 
 const roomSignalFilters: Array<{ id: RoomSignalFilter; label: string }> = [
@@ -213,10 +205,6 @@ const taskStatusTone: Record<Task["status"], "green" | "amber" | "red" | "blue" 
   done: "secondary",
   killed: "red"
 };
-
-function decisionActionFromLabel(label: string): DecisionAction | undefined {
-  return (Object.entries(decisionActionLabels).find(([, value]) => value === label)?.[0] as DecisionAction | undefined) ?? undefined;
-}
 
 function roomProduct(workspace: WorkspaceSeed, room: Room): Product {
   const product = workspace.products.find((item) => item.id === room.productId);
@@ -1258,13 +1246,13 @@ export function App() {
 
   return (
     <main
-      className="dark-cockpit grid h-screen min-h-[760px] min-w-[1040px] gap-0 bg-[radial-gradient(circle_at_70%_8%,rgba(16,185,129,0.12),transparent_24%),radial-gradient(circle_at_15%_20%,rgba(59,130,246,0.10),transparent_26%),#080b0f] p-2.5 text-stone-100 max-lg:flex max-lg:h-auto max-lg:min-w-0 max-lg:flex-col max-lg:gap-2.5"
+      className="dark-cockpit grid h-screen min-h-[760px] min-w-[1040px] gap-0 bg-[#070706] p-2.5 text-stone-100 max-lg:flex max-lg:h-auto max-lg:min-w-0 max-lg:flex-col max-lg:gap-2.5"
       style={{ gridTemplateColumns: mainGridTemplateColumns }}
     >
       {!isRoomFocused ? (
       <aside className="min-w-[220px] overflow-auto rounded-l-2xl rounded-r-md border border-stone-800 bg-stone-950/92 p-4 shadow-2xl shadow-black/40 max-lg:w-full max-lg:max-w-none max-lg:rounded-2xl">
         <div className="mb-6 flex items-center gap-3">
-          <div className="grid h-10 w-10 place-items-center rounded-lg bg-emerald-400 text-stone-950">
+          <div className="grid h-10 w-10 place-items-center rounded-lg bg-emerald-500 text-stone-950">
             <Sparkles size={18} />
           </div>
           <div>
@@ -1387,10 +1375,8 @@ export function App() {
               </h2>
             </div>
             <div className="flex shrink-0 gap-2">
-              <Button variant="outline" size="icon" type="button" aria-label="Start room" onClick={() => startRoomRun(selectedRoom.id, "dry-run")}>
-                <Play size={17} />
-              </Button>
               <Button
+                variant="outline"
                 type="button"
                 onClick={() => {
                   setIsCreatingRoom((current) => !current);
@@ -1427,7 +1413,6 @@ export function App() {
               setSelectedRoomId(item.roomId);
               setIsCreatingRoom(false);
             }}
-            onAction={(item, action) => performDecisionAction(item.roomId, action)}
           />
         ) : null}
 
@@ -1478,13 +1463,13 @@ export function App() {
         ) : null}
 
         {isCreatingRoom ? (
-          <section className="mb-4 rounded-xl border border-stone-200 bg-white p-4 shadow-sm">
+          <section className="mb-4 rounded-xl border border-stone-800 bg-stone-900/70 p-4 shadow-sm">
             <div className="mb-3">
               <p className="text-[11px] font-extrabold uppercase text-stone-500">Create room</p>
-              <h3 className="text-base font-semibold">Assign a task to an elf</h3>
+              <h3 className="text-base font-semibold text-stone-100">Assign a task to an elf</h3>
             </div>
             <div className="grid gap-3">
-              <label className="grid gap-1 text-sm font-semibold">
+              <label className="grid gap-1 text-sm font-semibold text-stone-300">
                 Project
                 <select
                   className="h-10 rounded-md border border-stone-700 bg-stone-950 px-3 text-sm text-stone-100"
@@ -1498,7 +1483,7 @@ export function App() {
                   ))}
                 </select>
               </label>
-              <label className="grid gap-1 text-sm font-semibold">
+              <label className="grid gap-1 text-sm font-semibold text-stone-300">
                 Task
                 <input
                   className="h-10 rounded-md border border-stone-700 bg-stone-950 px-3 text-sm text-stone-100"
@@ -1507,7 +1492,7 @@ export function App() {
                   placeholder="Fix flaky onboarding test"
                 />
               </label>
-              <label className="grid gap-1 text-sm font-semibold">
+              <label className="grid gap-1 text-sm font-semibold text-stone-300">
                 Elf
                 <select
                   className="h-10 rounded-md border border-stone-700 bg-stone-950 px-3 text-sm text-stone-100"
@@ -1521,7 +1506,7 @@ export function App() {
                   ))}
                 </select>
               </label>
-              <label className="grid gap-1 text-sm font-semibold">
+              <label className="grid gap-1 text-sm font-semibold text-stone-300">
                 Playbook
                 <select
                   className="h-10 rounded-md border border-stone-700 bg-stone-950 px-3 text-sm text-stone-100"
@@ -1535,7 +1520,7 @@ export function App() {
                   ))}
                 </select>
               </label>
-              <label className="grid gap-1 text-sm font-semibold">
+              <label className="grid gap-1 text-sm font-semibold text-stone-300">
                 Acceptance criteria
                 <Textarea
                   value={newRoom.acceptanceCriteria}
@@ -1775,7 +1760,7 @@ function RoomDeck({
             <button
               className={cn(
                 "h-7 rounded-md px-2 text-[11px] font-bold transition-colors",
-                scope === "active" ? "bg-emerald-400 text-stone-950" : "text-stone-400 hover:bg-stone-900 hover:text-stone-100"
+                scope === "active" ? "bg-stone-800 text-stone-100" : "text-stone-400 hover:bg-stone-900 hover:text-stone-100"
               )}
               type="button"
               aria-pressed={scope === "active"}
@@ -1786,7 +1771,7 @@ function RoomDeck({
             <button
               className={cn(
                 "h-7 rounded-md px-2 text-[11px] font-bold transition-colors",
-                scope === "all" ? "bg-emerald-400 text-stone-950" : "text-stone-400 hover:bg-stone-900 hover:text-stone-100"
+                scope === "all" ? "bg-stone-800 text-stone-100" : "text-stone-400 hover:bg-stone-900 hover:text-stone-100"
               )}
               type="button"
               aria-pressed={scope === "all"}
@@ -1825,7 +1810,7 @@ function RoomDeck({
               className={cn(
                 "h-7 rounded-md border px-2 text-[11px] font-bold transition-colors",
                 signalFilter === filter.id
-                  ? "border-emerald-400 bg-emerald-400 text-stone-950"
+                  ? "border-emerald-500/60 bg-stone-900 text-stone-100"
                   : "border-stone-800 bg-stone-950 text-stone-400 hover:border-stone-700 hover:text-stone-100"
               )}
               type="button"
@@ -2064,16 +2049,14 @@ function clampNumber(value: number, min: number, max: number) {
 function NeedsMePanel({
   items,
   workspace,
-  onOpenRoom,
-  onAction
+  onOpenRoom
 }: {
   items: DecisionItem[];
   workspace: WorkspaceSeed;
   onOpenRoom: (item: DecisionItem) => void;
-  onAction: (item: DecisionItem, action: DecisionAction) => void;
 }) {
   return (
-    <section className="mb-4 rounded-xl border border-stone-200 bg-white p-3 shadow-sm" aria-label="Needs Me">
+    <section className="mb-4 rounded-xl border border-stone-800 bg-stone-900/70 p-3 shadow-sm" aria-label="Needs Me">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
           <Inbox size={17} />
@@ -2086,59 +2069,36 @@ function NeedsMePanel({
       </div>
 
       {items.length > 0 ? (
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-2">
-          {items.slice(0, 4).map((item) => {
+        <div className="grid gap-2">
+          {items.slice(0, 2).map((item) => {
             const product = workspace.products.find((entry) => entry.id === item.productId);
             const tone = item.risk === "high" ? "red" : item.risk === "medium" ? "amber" : "green";
 
             return (
-              <article className="grid min-h-[190px] gap-2 rounded-lg border border-stone-200 bg-stone-50 p-3 text-left" key={item.id}>
+              <article className="grid gap-2 rounded-lg border border-stone-800 bg-stone-950/70 p-3 text-left" key={item.id}>
                 <div className="flex items-center gap-2 text-xs font-extrabold text-stone-500">
                   <span className={cn("h-2.5 w-2.5 rounded-full", statusDot[item.status])} />
                   <span>{product?.name ?? "Unknown project"}</span>
                   <Badge variant={tone} className="ml-auto">{item.risk}</Badge>
                 </div>
-                <strong className="text-sm leading-5">{item.title}</strong>
-                <p className="max-h-12 overflow-hidden text-xs leading-5 text-stone-600">{item.reason}</p>
-                <p className="max-h-10 overflow-hidden rounded-md bg-white px-2 py-1.5 text-xs leading-5 text-stone-500">
-                  {item.evidence[0] ?? item.recommendation}
-                </p>
+                <strong className="text-sm leading-5 text-stone-100">{item.title}</strong>
+                <p className="line-clamp-2 text-xs leading-5 text-stone-400">{item.reason}</p>
                 <div className="mt-auto flex flex-wrap items-center gap-1.5">
                   <Badge variant={statusTone[item.status]}>{statusLabels[item.status]}</Badge>
                   <button
                     type="button"
-                    className="ml-auto inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-xs font-bold text-stone-700 hover:bg-white"
+                    className="ml-auto inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-xs font-bold text-stone-300 hover:bg-stone-900 hover:text-stone-100"
                     onClick={() => onOpenRoom(item)}
                   >
                     Open <ArrowRight size={13} />
                   </button>
-                </div>
-                <div className="flex flex-wrap gap-1.5 border-t border-stone-200 pt-2">
-                  {item.actions.map((label) => {
-                    const action = decisionActionFromLabel(label);
-                    if (!action) {
-                      return null;
-                    }
-                    return (
-                      <Button
-                        className="h-7 px-2 text-[11px]"
-                        variant={decisionActionTone[action]}
-                        size="sm"
-                        type="button"
-                        key={label}
-                        onClick={() => onAction(item, action)}
-                      >
-                        {label}
-                      </Button>
-                    );
-                  })}
                 </div>
               </article>
             );
           })}
         </div>
       ) : (
-        <p className="rounded-lg bg-stone-50 px-3 py-2 text-sm text-stone-500">No room currently has an ask, failed run, blocker, or ready review.</p>
+        <p className="rounded-lg border border-stone-800 bg-stone-950/70 px-3 py-2 text-sm text-stone-500">No room currently has an ask, failed run, blocker, or ready review.</p>
       )}
     </section>
   );
@@ -2169,7 +2129,7 @@ function OverviewSwitcher({
           <button
             className={cn(
               "grid min-h-12 gap-1 rounded-lg border px-2 py-1.5 text-left transition-colors",
-              activePanel === panel ? "border-emerald-400 bg-emerald-400 text-stone-950" : "border-stone-800 bg-stone-950/70 text-stone-300 hover:border-stone-700"
+              activePanel === panel ? "border-emerald-500/70 bg-stone-900 text-stone-100" : "border-stone-800 bg-stone-950/70 text-stone-400 hover:border-stone-700 hover:text-stone-100"
             )}
             type="button"
             key={panel}
@@ -2199,7 +2159,7 @@ function ElfFMPanel({
   const headline = selectedProductId === "all" ? feed.globalStation.nowPlaying : stations[0]?.nowPlaying ?? "No room is broadcasting for this project.";
 
   return (
-    <section className="mb-4 rounded-xl border border-stone-200 bg-stone-950 p-3 text-stone-50 shadow-sm" aria-label="Elf FM">
+    <section className="mb-4 rounded-xl border border-stone-800 bg-stone-950 p-3 text-stone-50 shadow-sm" aria-label="Elf FM">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
           <Radio size={18} />
@@ -2458,7 +2418,7 @@ function DailyBriefPanel({
   const itemCount = visibleSections.reduce((sum, section) => sum + section.items.length, 0);
 
   return (
-    <section className="mb-4 rounded-xl border border-stone-200 bg-white p-3 shadow-sm" aria-label="Daily Brief">
+    <section className="mb-4 rounded-xl border border-stone-800 bg-stone-900/70 p-3 shadow-sm" aria-label="Daily Brief">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
           <CalendarDays size={17} />
@@ -2488,12 +2448,12 @@ function DailyBriefPanel({
 
       <div className="grid gap-2">
         {visibleRecommendations.length > 0 ? (
-          <div className="rounded-lg border border-blue-100 bg-blue-50 p-2">
-            <p className="mb-1 text-[11px] font-extrabold uppercase text-blue-900">Recommended next</p>
+          <div className="rounded-lg border border-sky-500/20 bg-sky-500/10 p-2">
+            <p className="mb-1 text-[11px] font-extrabold uppercase text-sky-200">Recommended next</p>
             <div className="grid gap-1">
               {visibleRecommendations.slice(0, 3).map((item) => (
                 <button
-                  className="grid gap-1 rounded-md bg-white/80 px-2 py-1.5 text-left text-xs text-blue-950 hover:bg-white"
+                  className="grid gap-1 rounded-md border border-stone-800 bg-stone-950/70 px-2 py-1.5 text-left text-xs text-stone-200 hover:border-stone-700"
                   type="button"
                   key={item.id}
                   onClick={() =>
@@ -2510,7 +2470,7 @@ function DailyBriefPanel({
                   }
                 >
                   <span className="font-bold">{item.productName}: {item.title}</span>
-                  <span className="line-clamp-2 text-blue-800">{item.recommendation}</span>
+                  <span className="line-clamp-2 text-stone-400">{item.recommendation}</span>
                 </button>
               ))}
             </div>
@@ -2519,7 +2479,7 @@ function DailyBriefPanel({
 
         <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-2">
           {visibleSections.map(({ section, items }) => (
-            <div className="rounded-lg border border-stone-200 bg-stone-50 p-2" key={section}>
+            <div className="rounded-lg border border-stone-800 bg-stone-950/70 p-2" key={section}>
               <div className="mb-1 flex items-center justify-between gap-2">
                 <p className="text-[11px] font-extrabold uppercase text-stone-500">{briefSectionLabels[section]}</p>
                 <Badge variant={items.length > 0 ? statusTone[items[0].status] : "secondary"}>{items.length}</Badge>
@@ -2527,13 +2487,13 @@ function DailyBriefPanel({
               <div className="grid gap-1">
                 {items.slice(0, 2).map((item) => (
                   <button
-                    className="rounded-md bg-white px-2 py-1.5 text-left text-xs hover:bg-stone-100"
+                    className="rounded-md border border-stone-800 bg-stone-900/80 px-2 py-1.5 text-left text-xs hover:border-stone-700"
                     type="button"
                     key={item.id}
                     onClick={() => onOpenRoom(item)}
                   >
                     <span className="block truncate font-bold">{item.productName}</span>
-                    <span className="line-clamp-2 leading-4 text-stone-600">{item.title}</span>
+                    <span className="line-clamp-2 leading-4 text-stone-400">{item.title}</span>
                   </button>
                 ))}
                 {items.length === 0 ? <p className="px-1 py-1 text-xs text-stone-400">None</p> : null}
@@ -2542,12 +2502,12 @@ function DailyBriefPanel({
           ))}
         </div>
         {exportStatus ? (
-          <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-2 py-1.5 text-xs font-semibold text-emerald-900">
+          <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2 py-1.5 text-xs font-semibold text-emerald-200">
             {exportStatus}
           </div>
         ) : null}
         {snapshotStatus ? (
-          <div className="rounded-lg border border-blue-100 bg-blue-50 px-2 py-1.5 text-xs font-semibold text-blue-950">
+          <div className="rounded-lg border border-sky-500/30 bg-sky-500/10 px-2 py-1.5 text-xs font-semibold text-sky-200">
             {snapshotStatus}
           </div>
         ) : null}
@@ -2644,8 +2604,8 @@ function ProjectButton({
   return (
     <button
       className={cn(
-        "flex w-full items-center justify-between gap-3 rounded-lg border border-transparent px-3 py-3 text-left transition-colors hover:border-stone-200 hover:bg-stone-50",
-        selected && "border-emerald-200 bg-emerald-50"
+        "flex w-full items-center justify-between gap-3 rounded-lg border border-transparent px-3 py-3 text-left transition-colors hover:border-stone-800 hover:bg-stone-900/60",
+        selected && "border-emerald-500/50 bg-stone-900/80"
       )}
       type="button"
       onClick={onClick}
@@ -2654,7 +2614,7 @@ function ProjectButton({
         <span className="block overflow-wrap-anywhere font-bold">{title}</span>
         {meta ? <small className="mt-1 block text-xs text-stone-500">{meta}</small> : null}
       </span>
-      <span className="grid h-8 min-w-8 place-items-center rounded-md bg-stone-100 px-2 text-sm font-bold">{count}</span>
+      <span className="grid h-8 min-w-8 place-items-center rounded-md bg-stone-900 px-2 text-sm font-bold text-stone-300">{count}</span>
     </button>
   );
 }
@@ -2786,7 +2746,7 @@ function FolderSignal({ label, ok }: { label: string; ok: boolean }) {
 
 function StatusPill({ status, count, label }: { status: RoomStatus; count: number; label?: string }) {
   return (
-    <div className="flex justify-between rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm">
+    <div className="flex justify-between rounded-lg border border-stone-800 bg-stone-950/70 px-3 py-2 text-sm text-stone-300">
       <span className="flex items-center gap-2">
         <span className={cn("h-2.5 w-2.5 rounded-full", statusDot[status])} />
         {label ?? statusLabels[status]}
@@ -2804,17 +2764,17 @@ function RoomCard({ room, workspace, selected, onSelect }: { room: Room; workspa
 
   return (
     <button type="button" className="text-left" onClick={onSelect}>
-      <Card className={cn("min-h-[220px] transition-all hover:border-emerald-200 hover:shadow-lg", selected && "border-emerald-300 shadow-lg")}>
-        <CardHeader className="pb-3">
+      <Card className={cn("min-h-[156px] transition-all hover:border-stone-600", selected && "border-emerald-500/70")}>
+        <CardHeader className="pb-2">
           <div className="flex items-center gap-2 text-xs font-extrabold text-stone-500">
             <span className={cn("h-2.5 w-2.5 rounded-full", statusDot[room.status])} />
             <span>{statusLabels[room.status]}</span>
             <span className="ml-auto">{room.lastActivityAt}</span>
           </div>
-          <CardTitle className="text-lg leading-tight">{room.title}</CardTitle>
+          <CardTitle className="line-clamp-1 text-base leading-tight">{room.title}</CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-4">
-          <p className="text-sm leading-6 text-stone-600">{room.summary}</p>
+        <CardContent className="grid gap-3">
+          <p className="line-clamp-2 text-sm leading-5 text-stone-400">{room.summary}</p>
           <div className="flex flex-wrap gap-2">
             <Badge variant="secondary">{product.name}</Badge>
             <Badge variant="outline">{elf.name}</Badge>
@@ -2834,7 +2794,7 @@ function Signal({ icon, label, active }: { icon: React.ReactNode; label: string;
     <span
       className={cn(
         "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold",
-        active ? "bg-amber-50 text-amber-800 ring-1 ring-amber-200" : "bg-stone-100 text-stone-600"
+        active ? "bg-amber-500/10 text-amber-200 ring-1 ring-amber-500/30" : "bg-stone-900 text-stone-400"
       )}
     >
       {icon}
@@ -2967,19 +2927,19 @@ function RoomDetail({
         </Button>
       </header>
 
-      <section className="grid min-h-44 grid-cols-[190px_1fr] items-center gap-4 rounded-xl border border-stone-200 bg-[linear-gradient(135deg,#f8f5e8,#eef5ed_58%,#e9f0f8)] p-4 max-lg:grid-cols-1">
+      <section className="grid min-h-36 grid-cols-[150px_1fr] items-center gap-4 rounded-xl border border-stone-800 bg-stone-900/70 p-4 max-lg:grid-cols-1">
         <ElfWorkbench status={room.status} />
         <div>
           <Badge variant={statusTone[room.status]} className="mb-2">{statusLabels[room.status]}</Badge>
           <h3 className="text-base font-semibold">{elf.name} is assigned</h3>
-          <p className="mt-2 text-sm leading-6 text-stone-600">{room.summary}</p>
+          <p className="mt-2 line-clamp-2 text-sm leading-6 text-stone-400">{room.summary}</p>
         </div>
       </section>
 
       {ask ? (
-        <section className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+        <section className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
           <SectionTitle icon={<MessageSquare size={16} />} title="Elf asks" />
-          <p className="text-sm leading-6 text-amber-950">{ask.question}</p>
+          <p className="text-sm leading-6 text-amber-100">{ask.question}</p>
           <div className="mt-3 flex flex-wrap gap-2">
             {ask.options.map((option) => (
               <Button variant="outline" size="sm" type="button" key={option} onClick={() => onAnswerAsk(ask.id, option, decisionNote)}>
@@ -2987,20 +2947,20 @@ function RoomDetail({
               </Button>
             ))}
           </div>
-          <div className="mt-3 grid gap-1 rounded-lg bg-white/70 p-3 text-sm text-amber-950">
+          <div className="mt-3 grid gap-1 rounded-lg border border-amber-500/20 bg-stone-950/60 p-3 text-sm text-amber-100">
             <strong>Recommendation</strong>
             <span>{ask.recommendation}</span>
           </div>
         </section>
       ) : null}
 
-      <section className="grid grid-cols-[1fr_0.78fr] gap-4 rounded-xl border border-stone-200 bg-white p-4 max-lg:grid-cols-1">
+      <section className="grid grid-cols-[0.85fr_1fr] gap-4 rounded-xl border border-stone-800 bg-stone-900/70 p-4 max-lg:grid-cols-1">
         <div>
           <SectionTitle icon={<ClipboardCheck size={16} />} title="Acceptance" />
           <ul className="grid gap-2">
             {task.acceptanceCriteria.map((item) => (
-              <li className="flex items-start gap-2 text-sm leading-5 text-stone-600" key={item}>
-                <CheckCircle2 className="mt-0.5 shrink-0 text-emerald-700" size={15} />
+              <li className="flex items-start gap-2 text-sm leading-5 text-stone-400" key={item}>
+                <CheckCircle2 className="mt-0.5 shrink-0 text-emerald-300" size={15} />
                 {item}
               </li>
             ))}
@@ -3024,20 +2984,10 @@ function RoomDetail({
               rows={3}
             />
           </label>
-          <div className="grid grid-cols-3 gap-2">
-            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onStartDryRun(runInstructions)}><Play size={15} />Dry</Button>
-            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onStartCodexReadOnly(runInstructions)} disabled={Boolean(readOnlyBlocker)}><SquareTerminal size={15} />Read</Button>
+          <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
+            <Button className="min-w-0 px-2" size="sm" type="button" onClick={() => onStartMode("codex-worktree", runInstructions)} disabled={Boolean(worktreeBlocker)}><Hammer size={15} />Build</Button>
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onStartMode("worktree-dry-run", runInstructions)} disabled={Boolean(worktreeBlocker)}><GitBranch size={15} />Draft</Button>
-            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onStartMode("codex-worktree", runInstructions)} disabled={Boolean(worktreeBlocker)}><Hammer size={15} />Build</Button>
-            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onOpenPrompt}><ScrollText size={15} />Prompt</Button>
-            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onOpenRunLog}><SquareTerminal size={15} />Log</Button>
-            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onGenerateTranscript}><FileText size={15} />Doc</Button>
-            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onOpenDiff}><GitBranch size={15} />Diff</Button>
-            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onRunCheck(checkGateSelection)}><TestTube2 size={15} />Check</Button>
-            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onRunCodeVetter}><ShieldCheck size={15} />Vet</Button>
-            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onApplyDiff}><GitBranch size={15} />Apply</Button>
-            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onCleanupWorktree}><Trash2 size={15} />Clean</Button>
-            <Button className="min-w-0 px-2" variant="destructive" size="sm" type="button" onClick={onKillRun} disabled={!activeRun}><CircleStop size={15} />Kill</Button>
+            <Button className="min-w-0 px-2" variant="destructive" size="sm" type="button" onClick={onKillRun} disabled={!activeRun} aria-label="Kill active run"><CircleStop size={15} /></Button>
           </div>
           <label className="mt-2 grid gap-1 text-xs font-extrabold uppercase text-stone-500">
             Check gate
@@ -3054,15 +3004,33 @@ function RoomDetail({
               ))}
             </select>
           </label>
-          <div className="mt-3 grid grid-cols-2 gap-2 border-t border-stone-200 pt-3">
-            <Button className="min-w-0 px-2" size="sm" type="button" onClick={() => onDecisionAction("approve", decisionNote)}>Approve</Button>
-            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onDecisionAction("request_fix", decisionNote)}>Request fix</Button>
-            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onDecisionAction("snooze", decisionNote)}>Snooze</Button>
-            <Button className="min-w-0 px-2" variant="destructive" size="sm" type="button" onClick={() => onDecisionAction("reject", decisionNote)}>Reject</Button>
-            <Button className="col-span-2 min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onDecisionAction("retry", decisionNote)}>Retry latest run</Button>
-          </div>
+          <details className="mt-3 rounded-lg border border-stone-800 bg-stone-950/60 p-2">
+            <summary className="cursor-pointer list-none text-xs font-extrabold uppercase text-stone-500">Evidence tools</summary>
+            <div className="mt-2 grid grid-cols-4 gap-2">
+              <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onStartDryRun(runInstructions)}><Play size={15} />Dry</Button>
+              <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onStartCodexReadOnly(runInstructions)} disabled={Boolean(readOnlyBlocker)}><SquareTerminal size={15} />Read</Button>
+              <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onOpenPrompt}><ScrollText size={15} />Prompt</Button>
+              <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onOpenRunLog}><SquareTerminal size={15} />Log</Button>
+              <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onGenerateTranscript}><FileText size={15} />Doc</Button>
+              <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onOpenDiff}><GitBranch size={15} />Diff</Button>
+              <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onRunCheck(checkGateSelection)}><TestTube2 size={15} />Check</Button>
+              <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onRunCodeVetter}><ShieldCheck size={15} />Vet</Button>
+              <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onApplyDiff}><GitBranch size={15} />Apply</Button>
+              <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onCleanupWorktree}><Trash2 size={15} />Clean</Button>
+            </div>
+          </details>
+          <details className="mt-2 rounded-lg border border-stone-800 bg-stone-950/60 p-2">
+            <summary className="cursor-pointer list-none text-xs font-extrabold uppercase text-stone-500">Decision actions</summary>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <Button className="min-w-0 px-2" size="sm" type="button" onClick={() => onDecisionAction("approve", decisionNote)}>Approve</Button>
+              <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onDecisionAction("request_fix", decisionNote)}>Request fix</Button>
+              <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onDecisionAction("snooze", decisionNote)}>Snooze</Button>
+              <Button className="min-w-0 px-2" variant="destructive" size="sm" type="button" onClick={() => onDecisionAction("reject", decisionNote)}>Reject</Button>
+              <Button className="col-span-2 min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onDecisionAction("retry", decisionNote)}>Retry latest run</Button>
+            </div>
+          </details>
           {decisionPreview ? (
-            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm leading-5 text-amber-950">
+            <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm leading-5 text-amber-100">
               {decisionPreview}
             </div>
           ) : null}
@@ -3070,17 +3038,19 @@ function RoomDetail({
       </section>
 
       {playbook ? (
-        <section className="rounded-xl border border-stone-200 bg-white p-4">
-          <SectionTitle icon={<BookOpenText size={16} />} title="Playbook" />
-          <div className="grid gap-3">
+        <details className="rounded-xl border border-stone-800 bg-stone-900/60 p-3">
+          <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-bold text-stone-200">
+            <BookOpenText size={16} />
+            Playbook: {playbook.name}
+          </summary>
+          <div className="mt-3 grid gap-3">
             <div>
-              <Badge variant="blue">{playbook.name}</Badge>
-              <p className="mt-2 text-sm leading-6 text-stone-600">{playbook.description}</p>
+              <p className="text-sm leading-6 text-stone-400">{playbook.description}</p>
             </div>
             <div className="grid grid-cols-2 gap-3 text-sm max-lg:grid-cols-1">
               <div>
                 <p className="mb-1 text-xs font-extrabold uppercase text-stone-500">Steps</p>
-                <ol className="grid list-decimal gap-1 pl-4 text-stone-600">
+                <ol className="grid list-decimal gap-1 pl-4 text-stone-400">
                   {playbook.steps.slice(0, 4).map((step) => (
                     <li key={step}>{step}</li>
                   ))}
@@ -3096,21 +3066,21 @@ function RoomDetail({
               </div>
             </div>
           </div>
-        </section>
+        </details>
       ) : null}
 
       {runs.length > 0 ? (
         <section>
           <SectionTitle icon={<Activity size={16} />} title="Runs" />
-          <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
-            {runs.slice(0, 4).map((run, index) => (
-              <div className={cn("flex items-center gap-3 p-3 text-sm", index !== Math.min(runs.length, 4) - 1 && "border-b border-stone-200")} key={run.id}>
+          <div className="overflow-hidden rounded-xl border border-stone-800 bg-stone-900/70">
+            {runs.slice(0, 2).map((run, index) => (
+              <div className={cn("flex items-center gap-3 p-3 text-sm", index !== Math.min(runs.length, 2) - 1 && "border-b border-stone-800")} key={run.id}>
                 <Badge variant={run.status === "running" ? "blue" : run.status === "completed" ? "green" : run.status === "killed" ? "amber" : "red"}>
                   {run.status}
                 </Badge>
                 <div className="min-w-0">
                   <strong className="block truncate">{run.mode}</strong>
-                  <p className="break-words text-xs text-stone-500">{run.command}</p>
+                  <p className="line-clamp-1 break-words text-xs text-stone-500">{run.command}</p>
                   {run.branchName || run.workspacePath ? (
                     <div className="mt-1 space-y-0.5 text-xs text-stone-500">
                       {run.branchName ? (
@@ -3195,15 +3165,15 @@ function RoomWorkbench({
   onSaveNote: () => void;
 }) {
   return (
-    <section className="rounded-xl border border-stone-200 bg-white p-3">
+    <section className="rounded-xl border border-stone-800 bg-stone-900/70 p-3">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <SectionTitle icon={<PanelRightOpen size={16} />} title="Room workbench" />
-        <div className="flex rounded-lg border border-stone-200 bg-stone-50 p-1" aria-label="Room workbench tabs">
+        <div className="flex rounded-lg border border-stone-800 bg-stone-950 p-1" aria-label="Room workbench tabs">
           {roomWorkbenchTabs.map((tab) => (
             <div
               className={cn(
                 "flex h-7 cursor-pointer items-center gap-1 rounded-md px-2 text-[11px] font-semibold transition-colors",
-                activeTab === tab.id ? "text-stone-900" : "text-stone-700"
+                activeTab === tab.id ? "bg-stone-800 text-stone-100" : "text-stone-400 hover:text-stone-100"
               )}
               role="button"
               tabIndex={0}
@@ -3250,25 +3220,25 @@ function RoomTimelinePanel({ room, runs }: { room: Room; runs: ElfRun[] }) {
   const items = buildRoomTimeline(room, runs);
 
   return (
-    <div className="rounded-xl border border-stone-200 bg-white p-3">
+    <div className="rounded-xl border border-stone-800 bg-stone-950/70 p-2">
       {items.length > 0 ? (
-        <ol className="grid gap-2">
+        <ol className="grid gap-1.5">
           {items.map((item) => (
-            <li className="grid grid-cols-[12px_1fr] gap-3" key={item.id}>
-              <span className={cn("mt-2 size-2.5 rounded-full ring-4", timelineDotTone[item.tone])} />
-              <div className="rounded-lg border border-stone-200 bg-stone-50/70 p-3">
-                <div className="flex flex-wrap items-center gap-2">
+            <li className="grid grid-cols-[10px_1fr] gap-2" key={item.id}>
+              <span className={cn("mt-3 size-2 rounded-full ring-2", timelineDotTone[item.tone])} />
+              <div className="rounded-lg border border-stone-800 bg-stone-900/70 px-3 py-2">
+                <div className="flex flex-wrap items-center gap-2 text-xs">
                   <Badge variant={item.tone}>{item.source}</Badge>
                   {item.time ? <time className="text-[11px] font-semibold text-stone-500">{item.time}</time> : null}
                 </div>
-                <strong className="mt-2 block text-sm leading-5 text-stone-100">{item.title}</strong>
-                <p className="mt-1 text-xs leading-5 text-stone-500">{item.summary}</p>
+                <strong className="mt-1 block line-clamp-1 text-sm leading-5 text-stone-200">{item.title}</strong>
+                <p className="line-clamp-1 text-xs leading-5 text-stone-500">{item.summary}</p>
               </div>
             </li>
           ))}
         </ol>
       ) : (
-        <p className="rounded-lg border border-stone-200 bg-stone-50 p-3 text-sm text-stone-500">No room activity has been captured yet.</p>
+        <p className="rounded-lg border border-stone-800 bg-stone-900/70 p-3 text-sm text-stone-500">No room activity has been captured yet.</p>
       )}
     </div>
   );
@@ -3348,7 +3318,7 @@ function buildRoomTimeline(room: Room, runs: ElfRun[]): RoomTimelineItem[] {
     });
   }
 
-  return items.slice(0, 12);
+  return items.slice(0, 7);
 }
 
 function RoomLogsPanel({ room }: { room: Room }) {
@@ -3378,7 +3348,7 @@ function RoomLogsPanel({ room }: { room: Room }) {
 
 function RoomArtifactsPanel({ room }: { room: Room }) {
   return (
-    <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
+    <div className="overflow-hidden rounded-xl border border-stone-800 bg-stone-950/70">
       {room.artifacts.length > 0 ? (
         room.artifacts.map((artifact, index) => (
           <ArtifactRow key={artifact.id} artifact={artifact} last={index === room.artifacts.length - 1} />
@@ -3394,7 +3364,7 @@ function RoomOutputsPanel({ outputs }: { outputs: RoomOutputPreview[] }) {
   const openOutputs = outputs.filter((output) => output.body && output.body.trim().length > 0);
 
   return (
-    <div className="grid gap-3 rounded-xl border border-stone-200 bg-white p-3">
+    <div className="grid gap-3 rounded-xl border border-stone-800 bg-stone-950/70 p-3">
       {openOutputs.length > 0 ? (
         openOutputs.map((output) => (
           <section className="grid gap-2" key={output.id}>
@@ -3405,7 +3375,7 @@ function RoomOutputsPanel({ outputs }: { outputs: RoomOutputPreview[] }) {
           </section>
         ))
       ) : (
-        <p className="rounded-lg border border-stone-200 bg-stone-50 p-3 text-sm text-stone-500">
+        <p className="rounded-lg border border-stone-800 bg-stone-900/70 p-3 text-sm text-stone-500">
           Open a prompt, diff, transcript, check output, CodeVetter report, cleanup result, or applied diff result to inspect it here.
         </p>
       )}
@@ -3425,10 +3395,10 @@ function RoomNotesPanel({
   onSaveNote: () => void;
 }) {
   return (
-    <div className="grid gap-3 rounded-xl border border-stone-200 bg-white p-3">
+    <div className="grid gap-3 rounded-xl border border-stone-800 bg-stone-950/70 p-3">
       {room.notes.length > 0 ? (
         room.notes.map((note) => (
-          <p className="text-sm leading-6 text-stone-600" key={note}>{note}</p>
+          <p className="text-sm leading-6 text-stone-300" key={note}>{note}</p>
         ))
       ) : (
         <p className="text-sm text-stone-500">No founder notes yet.</p>
@@ -3462,7 +3432,7 @@ function RoomMemoryPanel({
   onSaveMemory: (section: ProductMemorySectionKey, body: string) => void;
 }) {
   return (
-    <div className="grid gap-3 rounded-xl border border-stone-200 bg-white p-3">
+    <div className="grid gap-3 rounded-xl border border-stone-800 bg-stone-950/70 p-3">
       {productMemory ? (
         <>
           <div className="flex flex-wrap gap-2">
@@ -3514,8 +3484,8 @@ function ArtifactRow({ artifact, last }: { artifact: Artifact; last: boolean }) 
   const tone = artifact.status === "passed" || artifact.status === "ready" ? "green" : artifact.status === "failed" ? "red" : "secondary";
 
   return (
-    <div className={cn("flex items-center gap-3 p-3", !last && "border-b border-stone-200")}>
-      <div className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-stone-100">{icon}</div>
+    <div className={cn("flex items-center gap-3 p-3", !last && "border-b border-stone-800")}>
+      <div className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-stone-900 text-stone-300">{icon}</div>
       <div className="min-w-0">
         <strong className="block truncate text-sm">{artifact.title}</strong>
         <p className="mt-1 text-xs leading-5 text-stone-500">{artifact.summary}</p>
@@ -3599,15 +3569,15 @@ function buildGateChecklistItem({
 
 function GateChecklist({ items }: { items: GateChecklistItem[] }) {
   return (
-    <div className="mb-3 grid gap-2 rounded-lg border border-stone-200 bg-stone-50/70 p-2.5" aria-label="Gate checklist">
+    <div className="mb-3 grid gap-2 rounded-lg border border-stone-800 bg-stone-950/60 p-2.5" aria-label="Gate checklist">
       {items.map((item) => (
         <div className="flex min-w-0 items-start gap-2" key={item.id}>
           <span className={cn(
             "mt-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded-full border",
-            item.state === "passed" && "border-emerald-200 bg-emerald-50 text-emerald-700",
-            item.state === "failed" && "border-red-200 bg-red-50 text-red-700",
-            item.state === "missing" && "border-amber-200 bg-amber-50 text-amber-700",
-            item.state === "waiting" && "border-stone-200 bg-white text-stone-500"
+            item.state === "passed" && "border-emerald-500/30 bg-emerald-500/10 text-emerald-200",
+            item.state === "failed" && "border-red-500/30 bg-red-500/10 text-red-200",
+            item.state === "missing" && "border-amber-500/30 bg-amber-500/10 text-amber-200",
+            item.state === "waiting" && "border-stone-700 bg-stone-900 text-stone-500"
           )}>
             {item.state === "passed" ? <CheckCircle2 size={13} /> : item.state === "failed" ? <CircleStop size={13} /> : <HelpCircle size={13} />}
           </span>
