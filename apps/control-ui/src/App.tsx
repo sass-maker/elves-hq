@@ -104,6 +104,7 @@ const paneLayoutStorageKey = "elves-hq:pane-layout:v1";
 const terminalDrawerLayoutStorageKey = "elves-hq:terminal-drawer-layout:v1";
 const terminalGridColumns = 12;
 const terminalGridRowHeight = 74;
+const terminalPageSize = 6;
 const roomDeckPageSize = 4;
 
 type PaneLayout = {
@@ -1973,6 +1974,7 @@ function TerminalCommandCenter({
   const [focusedTerminalRoomId, setFocusedTerminalRoomId] = useState<string | null>(null);
   const [terminalDrawerLayouts, setTerminalDrawerLayouts] = useState<TerminalDrawerLayouts>(readStoredTerminalDrawerLayouts);
   const [isCreatingTerminal, setIsCreatingTerminal] = useState(false);
+  const [terminalPage, setTerminalPage] = useState(0);
   const [terminalDraft, setTerminalDraft] = useState<CreateTerminalInput>({
     productId: selectedProductId === "all" ? workspace.products[0]?.id ?? "" : selectedProductId,
     assignedElfId: defaultRoomElfId(workspace),
@@ -1988,6 +1990,10 @@ function TerminalCommandCenter({
   const navProducts = workspace.products.slice(0, 7);
   const terminalDrawerEntries = terminalEntries;
   const terminalRooms = terminalDrawerEntries.map((entry) => entry.room);
+  const terminalPages = chunkArray(terminalDrawerEntries, terminalPageSize);
+  const terminalPageCount = Math.max(1, terminalPages.length);
+  const currentTerminalPage = Math.min(terminalPage, terminalPageCount - 1);
+  const visibleTerminalEntries = terminalPages[currentTerminalPage] ?? [];
   const focusedTerminalRoom = terminalRooms.find((room) => room.id === focusedTerminalRoomId) ?? (focusedTerminalRoomId ? terminalRooms[0] : undefined);
   const terminalDecisionByRoomId = new Map<string, DecisionItem>();
   for (const item of decisionItems) {
@@ -2000,6 +2006,20 @@ function TerminalCommandCenter({
   useEffect(() => {
     window.localStorage.setItem(terminalDrawerLayoutStorageKey, JSON.stringify(terminalDrawerLayouts));
   }, [terminalDrawerLayouts]);
+
+  useEffect(() => {
+    setTerminalPage((current) => Math.min(current, terminalPageCount - 1));
+  }, [terminalPageCount]);
+
+  useEffect(() => {
+    const selectedIndex = terminalDrawerEntries.findIndex((entry) => entry.room.id === selectedRoomId);
+    if (selectedIndex < 0) {
+      return;
+    }
+
+    const selectedPage = Math.floor(selectedIndex / terminalPageSize);
+    setTerminalPage((current) => (current === selectedPage ? current : selectedPage));
+  }, [selectedRoomId]);
 
   useEffect(() => {
     setTerminalDraft((current) => ({
@@ -2365,9 +2385,37 @@ function TerminalCommandCenter({
             </div>
           ) : (
             <div className="min-h-[calc(100vh-112px)] p-7 max-sm:p-4">
+              <div className="mb-3 flex min-h-9 items-center justify-between gap-3 border border-slate-800 bg-[#05080d] px-3">
+                <div className="min-w-0">
+                  <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-slate-600">Terminal bay</p>
+                  <p className="truncate text-xs text-slate-400">
+                    {terminalDrawerEntries.length} active drawer{terminalDrawerEntries.length === 1 ? "" : "s"} · page {currentTerminalPage + 1} of {terminalPageCount}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <button
+                    className="grid size-8 place-items-center rounded border border-slate-800 text-slate-500 transition-colors hover:border-blue-300/40 hover:text-blue-100 disabled:cursor-not-allowed disabled:opacity-40"
+                    type="button"
+                    aria-label="Previous terminal page"
+                    disabled={currentTerminalPage === 0}
+                    onClick={() => setTerminalPage((current) => Math.max(0, current - 1))}
+                  >
+                    <ChevronLeft size={16} />
+                  </button>
+                  <button
+                    className="grid size-8 place-items-center rounded border border-slate-800 text-slate-500 transition-colors hover:border-blue-300/40 hover:text-blue-100 disabled:cursor-not-allowed disabled:opacity-40"
+                    type="button"
+                    aria-label="Next terminal page"
+                    disabled={currentTerminalPage >= terminalPageCount - 1}
+                    onClick={() => setTerminalPage((current) => Math.min(terminalPageCount - 1, current + 1))}
+                  >
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
+              </div>
               <div ref={terminalCanvasRef} className="grid auto-rows-[74px] grid-cols-12 gap-2">
                 {terminalDrawerEntries.length > 0 ? (
-                  terminalDrawerEntries.map((entry) => {
+                  visibleTerminalEntries.map((entry) => {
                     const layout = getTerminalDrawerLayout(entry);
 
                     return (
