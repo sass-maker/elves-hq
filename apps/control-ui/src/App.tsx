@@ -185,6 +185,14 @@ const defaultPaneLayout: PaneLayout = {
   rooms: 560
 };
 
+function formatSyncTime(date = new Date()) {
+  return date.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit"
+  });
+}
+
 const decisionActionLabels: Record<DecisionAction, string> = {
   approve: "Approve",
   request_fix: "Request fix",
@@ -256,6 +264,8 @@ function defaultRoomElfId(workspace: WorkspaceSeed) {
 export function App() {
   const [workspace, setWorkspace] = useState<WorkspaceSeed>(seedWorkspace);
   const [daemonState, setDaemonState] = useState<"connecting" | "local" | "fallback">("connecting");
+  const [syncState, setSyncState] = useState<"connecting" | "live" | "stale">("connecting");
+  const [lastSyncAt, setLastSyncAt] = useState("");
   const [selectedProductId, setSelectedProductId] = useState<string>("all");
   const [selectedRoomId, setSelectedRoomId] = useState<string>(seedWorkspace.rooms[1]?.id ?? "");
   const [roomNotes, setRoomNotes] = useState<Record<string, string>>({});
@@ -317,6 +327,10 @@ export function App() {
     assignedElfId: defaultRoomElfId(seedWorkspace),
     playbookId: seedWorkspace.playbooks[0]?.id ?? ""
   });
+  const markSynced = () => {
+    setSyncState("live");
+    setLastSyncAt(formatSyncTime());
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -340,6 +354,7 @@ export function App() {
           setDailyBrief(nextBrief);
           setElfFmFeed(nextFmFeed);
           setDaemonState("local");
+          markSynced();
         }
       })
       .catch(() => {
@@ -349,6 +364,7 @@ export function App() {
           setDailyBrief(buildDailyBrief(seedWorkspace));
           setElfFmFeed(buildElfFmFeed(seedWorkspace));
           setDaemonState("fallback");
+          setSyncState("stale");
         }
       });
 
@@ -407,9 +423,10 @@ export function App() {
           setDailyBrief(nextBrief);
           setElfFmFeed(nextFmFeed);
           setRoomRuns((current) => ({ ...current, [selectedRoomId]: runsBody.runs }));
+          markSynced();
         }
       } catch {
-        // Keep the last visible state; the badge already communicates daemon status on first load.
+        setSyncState("stale");
       }
     };
 
@@ -1275,9 +1292,12 @@ export function App() {
             <h1 className="text-2xl font-bold tracking-normal">Elves HQ</h1>
           </div>
         </div>
-        <Badge variant={daemonState === "local" ? "green" : daemonState === "connecting" ? "blue" : "amber"} className="mb-4">
-          {daemonState === "local" ? "Daemon connected" : daemonState === "connecting" ? "Connecting daemon" : "Seed fallback"}
+        <Badge variant={daemonState === "local" ? syncState === "stale" ? "amber" : "green" : daemonState === "connecting" ? "blue" : "amber"} className="mb-2">
+          {daemonState === "local" ? syncState === "stale" ? "Sync stale" : "Sync live" : daemonState === "connecting" ? "Connecting daemon" : "Seed fallback"}
         </Badge>
+        <p className="mb-4 text-[11px] font-semibold text-stone-500">
+          {lastSyncAt ? `Last local sync ${lastSyncAt}` : daemonState === "fallback" ? "Using seed data only." : "Waiting for local daemon."}
+        </p>
 
         <ProjectButton
           selected={selectedProductId === "all"}

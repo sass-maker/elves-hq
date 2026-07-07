@@ -34,6 +34,22 @@ Elves HQ MUST keep the task-room pane compact by showing one overview panel at a
 - **WHEN** overview panels are hidden behind the switcher
 - **THEN** the switcher still shows counts for decisions, broadcasts, backlog tasks, and brief recommendations
 
+### Requirement: Local sync visibility
+
+Elves HQ MUST tell the founder whether the visible cockpit state is currently synced from the local daemon.
+
+#### Scenario: Daemon polling succeeds
+
+- **WHEN** the cockpit refreshes workspace data from the local daemon
+- **THEN** the sidebar shows a live sync state
+- **AND** the sidebar shows the latest local sync time
+
+#### Scenario: Daemon polling fails after initial load
+
+- **WHEN** the cockpit cannot refresh workspace data from the local daemon
+- **THEN** the sidebar shows a stale sync state
+- **AND** the previously visible cockpit state remains visible for inspection
+
 ### Requirement: Room organization controls
 
 Elves HQ MUST let the founder organize visible task rooms without leaving the product-first cockpit.
