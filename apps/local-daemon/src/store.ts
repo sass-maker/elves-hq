@@ -107,6 +107,8 @@ interface RunRow {
   started_at: string;
   ended_at: string | null;
   exit_code: number | null;
+  workspace_path: string | null;
+  branch_name: string | null;
 }
 
 interface TaskRow {
@@ -595,6 +597,11 @@ export class WorkspaceStore {
     };
   }
 
+  updateRunWorkspace(runId: string, workspacePath: string, branchName: string): ElfRun {
+    this.db.prepare("UPDATE elf_runs SET workspace_path = ?, branch_name = ? WHERE id = ?").run(workspacePath, branchName, runId);
+    return this.getRun(runId);
+  }
+
   getRun(runId: string): ElfRun {
     const row = this.db.prepare("SELECT * FROM elf_runs WHERE id = ?").get(runId) as unknown as RunRow | undefined;
     if (!row) {
@@ -950,7 +957,9 @@ export class WorkspaceStore {
         command TEXT NOT NULL,
         started_at TEXT NOT NULL,
         ended_at TEXT,
-        exit_code INTEGER
+        exit_code INTEGER,
+        workspace_path TEXT,
+        branch_name TEXT
       );
     `);
     this.migrateSchema();
@@ -965,6 +974,14 @@ export class WorkspaceStore {
     const taskColumns = this.db.prepare("PRAGMA table_info(tasks)").all() as Array<{ name: string }>;
     if (!taskColumns.some((column) => column.name === "status")) {
       this.db.exec("ALTER TABLE tasks ADD COLUMN status TEXT NOT NULL DEFAULT 'inbox';");
+    }
+
+    const runColumns = this.db.prepare("PRAGMA table_info(elf_runs)").all() as Array<{ name: string }>;
+    if (!runColumns.some((column) => column.name === "workspace_path")) {
+      this.db.exec("ALTER TABLE elf_runs ADD COLUMN workspace_path TEXT;");
+    }
+    if (!runColumns.some((column) => column.name === "branch_name")) {
+      this.db.exec("ALTER TABLE elf_runs ADD COLUMN branch_name TEXT;");
     }
   }
 
@@ -1117,7 +1134,9 @@ function hydrateRun(row: RunRow): ElfRun {
     command: row.command,
     startedAt: row.started_at,
     endedAt: row.ended_at,
-    exitCode: row.exit_code
+    exitCode: row.exit_code,
+    workspacePath: row.workspace_path,
+    branchName: row.branch_name
   };
 }
 

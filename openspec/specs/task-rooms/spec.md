@@ -122,7 +122,7 @@ The V0 cockpit MUST persist room data in a local store owned by the repository c
 
 ### Requirement: Room run control
 
-The V0 daemon MUST be able to start, log, persist, and stop room-scoped runs.
+The V0 daemon MUST be able to start, log, persist, inspect, and stop room-scoped runs.
 
 #### Scenario: Founder starts a dry run
 
@@ -148,9 +148,16 @@ The V0 daemon MUST be able to start, log, persist, and stop room-scoped runs.
 
 - **WHEN** the founder starts a worktree-backed room run
 - **THEN** the daemon creates an isolated git worktree and branch for the run
+- **AND** the daemon persists the run workspace path and branch name on the run record
 - **AND** process output is appended to room logs
 - **AND** any resulting diff is captured as a room artifact
 - **AND** the original product checkout remains clean
+
+#### Scenario: Founder inspects worktree run metadata
+
+- **WHEN** a room has a worktree-backed run with persisted workspace metadata
+- **THEN** the existing room runs API returns the run workspace path and branch name
+- **AND** the cockpit shows that metadata in the room run list
 
 #### Scenario: Founder opens a captured diff
 

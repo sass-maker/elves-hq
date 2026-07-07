@@ -261,6 +261,8 @@ export interface ElfRun {
   startedAt: string;
   endedAt: string | null;
   exitCode: number | null;
+  workspacePath?: string | null;
+  branchName?: string | null;
 }
 
 export type CheckScriptKey = "check" | "typecheck" | "test" | "build";

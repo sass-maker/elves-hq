@@ -27,7 +27,7 @@ The UI runs on the local Vite URL printed by `pnpm dev:ui`. The local daemon def
 
 The add-project panel includes a local folder browser backed by the daemon. It lists child directories under the fleet root, lets you select a product folder without typing the path, and then reuses the existing read-only folder health preview before saving.
 
-Worktree-backed runs create isolated git worktrees under `runs/<run-id>/worktree` and captured patches at `runs/<run-id>/diff.patch`. The `runs/` directory is local-only and ignored.
+Worktree-backed runs create isolated git worktrees under `runs/<run-id>/worktree` and captured patches at `runs/<run-id>/diff.patch`. The run record includes the generated workspace path and branch name for room inspection. The `runs/` directory is local-only and ignored.
 
 Check gates run inside the captured worktree, choose a package script by key (`check`, `typecheck`, `test`, or `build`), and write output to `runs/<run-id>/check.log`. The room UI offers detected gate scripts plus Auto, which lets the daemon pick the first supported gate.
 

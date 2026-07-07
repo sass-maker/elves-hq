@@ -3086,6 +3086,17 @@ function RoomDetail({
                 <div className="min-w-0">
                   <strong className="block truncate">{run.mode}</strong>
                   <p className="break-words text-xs text-stone-500">{run.command}</p>
+                  {run.branchName || run.workspacePath ? (
+                    <div className="mt-1 space-y-0.5 text-xs text-stone-500">
+                      {run.branchName ? (
+                        <p className="flex min-w-0 items-center gap-1.5">
+                          <GitBranch size={12} className="shrink-0" />
+                          <span className="truncate">{run.branchName}</span>
+                        </p>
+                      ) : null}
+                      {run.workspacePath ? <p className="break-all font-mono text-[11px] text-stone-400">{run.workspacePath}</p> : null}
+                    </div>
+                  ) : null}
                 </div>
                 <span className="ml-auto text-xs text-stone-500">{run.exitCode ?? "..."}</span>
               </div>

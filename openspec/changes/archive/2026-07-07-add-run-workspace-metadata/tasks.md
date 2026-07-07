@@ -1,0 +1,6 @@
+- [x] Update the task-room spec with run workspace metadata behavior.
+- [x] Persist workspace path and branch name on worktree-backed runs.
+- [x] Return the metadata through the existing run API contract.
+- [x] Render branch/workspace metadata in the room run list.
+- [x] Update README and `PROJECT_STATUS.md`.
+- [x] Run `pnpm check` and `openspec validate --all --strict`.

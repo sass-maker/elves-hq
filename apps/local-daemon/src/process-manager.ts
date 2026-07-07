@@ -47,11 +47,14 @@ export class RoomProcessManager {
     const founderPrompt = options.prompt?.trim();
     const prompt = buildRoomRunPrompt(room, product, task, memory, playbook, options.mode, founderPrompt);
     const runOptions = { ...options, prompt, simulatedOutput: options.mode === "dry-run" ? founderPrompt : undefined };
-    const run = this.store.createRun(room.id, options.mode, command);
+    let run = this.store.createRun(room.id, options.mode, command);
     this.captureRunPrompt(run, prompt);
     let worktree: { path: string; branchName: string } | undefined;
     try {
       worktree = this.createWorktreeIfNeeded(run, product.localPath, task.title, options.mode);
+      if (worktree) {
+        run = this.store.updateRunWorkspace(run.id, worktree.path, worktree.branchName);
+      }
     } catch (error) {
       this.store.appendRoomLog(room.id, "error", error instanceof Error ? error.message : "Failed to create worktree.");
       this.store.finishRun(run.id, "failed", null);
@@ -114,7 +117,7 @@ export class RoomProcessManager {
       throw new Error("Checks require a worktree-backed run");
     }
 
-    const worktreePath = resolve(runsRoot, run.id, "worktree");
+    const worktreePath = run.workspacePath ?? resolve(runsRoot, run.id, "worktree");
     if (!existsSync(worktreePath)) {
       throw new Error(`Missing worktree for run ${run.id}`);
     }
@@ -174,7 +177,7 @@ export class RoomProcessManager {
       throw new Error("CodeVetter requires a worktree-backed run");
     }
 
-    const worktreePath = resolve(runsRoot, run.id, "worktree");
+    const worktreePath = run.workspacePath ?? resolve(runsRoot, run.id, "worktree");
     const diffPath = resolve(runsRoot, run.id, "diff.patch");
     if (!existsSync(worktreePath)) {
       throw new Error(`Missing worktree for run ${run.id}`);
@@ -235,8 +238,8 @@ export class RoomProcessManager {
     const room = this.store.getRoom(run.roomId);
     const product = this.store.getProduct(room.productId);
     const sourcePath = resolve(projectRoot, product.localPath);
-    const worktreePath = resolve(runsRoot, run.id, "worktree");
-    const branchName = generatedBranchNameForRun(run);
+    const worktreePath = run.workspacePath ?? resolve(runsRoot, run.id, "worktree");
+    const branchName = run.branchName ?? generatedBranchNameForRun(run);
 
     if (!existsSync(worktreePath)) {
       const branchCleanup = isGeneratedBranchName(branchName) ? removeGeneratedBranch(sourcePath, branchName) : { removed: false };
@@ -540,7 +543,7 @@ export class RoomProcessManager {
     }
 
     const branchName = `elves/${run.roomId}/${run.id}`;
-    const worktreePath = resolve(runsRoot, run.id, "worktree");
+    const worktreePath = run.workspacePath ?? resolve(runsRoot, run.id, "worktree");
     mkdirSync(dirname(worktreePath), { recursive: true });
 
     const result = spawnSync("git", ["-C", sourcePath, "worktree", "add", "-b", branchName, worktreePath, "HEAD"], {
