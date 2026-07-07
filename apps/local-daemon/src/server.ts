@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import type { CheckScriptKey, DecisionAction, ElfRun, Product, ProductMemorySectionKey, Task } from "@elves-hq/core";
+import type { CheckScriptKey, DecisionAction, ElfRun, Product, ProductMemorySectionKey, Task, TaskStatus } from "@elves-hq/core";
 import { RoomProcessManager } from "./process-manager";
 import { WorkspaceStore } from "./store";
 
@@ -95,6 +95,14 @@ const server = createServer(async (request, response) => {
       const body = await readJson(request);
       const task = store.createTask(readCreateTaskInput(body));
       sendJson(response, 200, { task, workspace: store.getWorkspace() });
+      return;
+    }
+
+    const taskStatusMatch = url.pathname.match(/^\/api\/tasks\/([^/]+)\/status$/);
+    if (request.method === "POST" && taskStatusMatch) {
+      const body = await readJson(request);
+      const task = store.updateTaskStatus(taskStatusMatch[1], readUpdateTaskStatusInput(body));
+      sendJson(response, 200, { task, workspace: store.getWorkspace(), needs: store.getDecisionItems(), brief: store.getDailyBrief(), fm: store.getElfFmFeed() });
       return;
     }
 
@@ -391,6 +399,19 @@ function readCreateTaskInput(body: unknown) {
     acceptanceCriteria: readAcceptanceCriteria(record.acceptanceCriteria),
     priority: readOptionalTaskPriority(record.priority)
   };
+}
+
+function readUpdateTaskStatusInput(body: unknown): { status: TaskStatus } {
+  if (!body || typeof body !== "object") {
+    throw new Error("Task status body is required");
+  }
+
+  const status = (body as { status?: unknown }).status;
+  if (status === "inbox" || status === "ready" || status === "assigned" || status === "done" || status === "killed") {
+    return { status };
+  }
+
+  throw new Error("Unsupported task status");
 }
 
 function readAssignTaskRoomInput(body: unknown) {

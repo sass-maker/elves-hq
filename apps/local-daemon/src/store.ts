@@ -31,6 +31,7 @@ import {
   type RoomAsk,
   type RoomLog,
   type Task,
+  type TaskStatus,
   type WorkspaceSeed
 } from "@elves-hq/core";
 
@@ -110,6 +111,7 @@ interface TaskRow {
   title: string;
   acceptanceCriteria: string;
   priority: Task["priority"];
+  status: TaskStatus;
 }
 
 export interface CreateRoomInput {
@@ -125,6 +127,10 @@ export interface CreateTaskInput {
   title: string;
   acceptanceCriteria: string[];
   priority?: Task["priority"];
+}
+
+export interface UpdateTaskStatusInput {
+  status: TaskStatus;
 }
 
 export interface AssignTaskRoomInput {
@@ -178,7 +184,8 @@ export class WorkspaceStore {
         productId: task.productId,
         title: task.title,
         acceptanceCriteria: JSON.parse(task.acceptanceCriteria) as string[],
-        priority: task.priority
+        priority: task.priority,
+        status: task.status
       })
     );
     const roomRows = this.db.prepare("SELECT * FROM rooms ORDER BY last_activity_at DESC").all() as unknown as RoomRow[];
@@ -394,7 +401,8 @@ export class WorkspaceStore {
       productId: row.productId,
       title: row.title,
       acceptanceCriteria: JSON.parse(row.acceptanceCriteria) as string[],
-      priority: row.priority
+      priority: row.priority,
+      status: row.status
     };
   }
 
@@ -409,6 +417,12 @@ export class WorkspaceStore {
     return this.getTask(task.id);
   }
 
+  updateTaskStatus(taskId: string, input: UpdateTaskStatusInput): Task {
+    const task = this.getTask(taskId);
+    this.db.prepare("UPDATE tasks SET status = ? WHERE id = ?").run(input.status, task.id);
+    return this.getTask(task.id);
+  }
+
   createTaskRoom(input: CreateRoomInput): { task: Task; room: Room } {
     const title = input.title.trim();
     if (!title) {
@@ -416,14 +430,14 @@ export class WorkspaceStore {
     }
 
     const product = this.getProduct(input.productId);
-    const task = makeTask(product.id, title, input.acceptanceCriteria, "medium");
+    const task: Task = { ...makeTask(product.id, title, input.acceptanceCriteria, "medium"), status: "assigned" };
     this.db.exec("BEGIN");
     try {
       this.insertTask(task);
       const room = this.insertRoomForTask(task, input);
       this.db.exec("COMMIT");
       this.appendRoomLog(room.id, "info", `Created room for ${product.name}: ${task.title}`);
-      return { task, room: this.getRoom(room.id) };
+      return { task: this.getTask(task.id), room: this.getRoom(room.id) };
     } catch (error) {
       this.db.exec("ROLLBACK");
       throw error;
@@ -439,10 +453,11 @@ export class WorkspaceStore {
 
     this.db.exec("BEGIN");
     try {
+      this.db.prepare("UPDATE tasks SET status = ? WHERE id = ?").run("assigned", task.id);
       const room = this.insertRoomForTask(task, input);
       this.db.exec("COMMIT");
       this.appendRoomLog(room.id, "info", `Assigned backlog task to room: ${task.title}`);
-      return { task, room: this.getRoom(room.id) };
+      return { task: this.getTask(task.id), room: this.getRoom(room.id) };
     } catch (error) {
       this.db.exec("ROLLBACK");
       throw error;
@@ -762,7 +777,8 @@ export class WorkspaceStore {
         productId TEXT NOT NULL,
         title TEXT NOT NULL,
         acceptanceCriteria TEXT NOT NULL,
-        priority TEXT NOT NULL
+        priority TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'inbox'
       );
 
       CREATE TABLE IF NOT EXISTS rooms (
@@ -838,6 +854,11 @@ export class WorkspaceStore {
     if (!roomColumns.some((column) => column.name === "playbook_id")) {
       this.db.exec("ALTER TABLE rooms ADD COLUMN playbook_id TEXT;");
     }
+
+    const taskColumns = this.db.prepare("PRAGMA table_info(tasks)").all() as Array<{ name: string }>;
+    if (!taskColumns.some((column) => column.name === "status")) {
+      this.db.exec("ALTER TABLE tasks ADD COLUMN status TEXT NOT NULL DEFAULT 'inbox';");
+    }
   }
 
   private recoverInterruptedRuns() {
@@ -872,8 +893,8 @@ export class WorkspaceStore {
 
   private insertTask(task: Task) {
     this.db
-      .prepare("INSERT INTO tasks (id, productId, title, acceptanceCriteria, priority) VALUES (?, ?, ?, ?, ?)")
-      .run(task.id, task.productId, task.title, JSON.stringify(task.acceptanceCriteria), task.priority);
+      .prepare("INSERT INTO tasks (id, productId, title, acceptanceCriteria, priority, status) VALUES (?, ?, ?, ?, ?, ?)")
+      .run(task.id, task.productId, task.title, JSON.stringify(task.acceptanceCriteria), task.priority, task.status);
   }
 
   private insertRoomForTask(task: Task, input: AssignTaskRoomInput): Room {
@@ -918,7 +939,7 @@ export class WorkspaceStore {
       "INSERT INTO products (id, name, slug, localPath, status, priority, currentGoal) VALUES (?, ?, ?, ?, ?, ?, ?)"
     );
     const insertElf = this.db.prepare("INSERT INTO elves (id, name, role, status) VALUES (?, ?, ?, ?)");
-    const insertTask = this.db.prepare("INSERT INTO tasks (id, productId, title, acceptanceCriteria, priority) VALUES (?, ?, ?, ?, ?)");
+    const insertTask = this.db.prepare("INSERT INTO tasks (id, productId, title, acceptanceCriteria, priority, status) VALUES (?, ?, ?, ?, ?, ?)");
     const insertRoom = this.db.prepare(
       "INSERT INTO rooms (id, product_id, task_id, assigned_elf_id, playbook_id, title, status, started_at, last_activity_at, summary) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     );
@@ -939,7 +960,7 @@ export class WorkspaceStore {
         insertElf.run(elf.id, elf.name, elf.role, elf.status);
       }
       for (const task of seedWorkspace.tasks) {
-        insertTask.run(task.id, task.productId, task.title, JSON.stringify(task.acceptanceCriteria), task.priority);
+        insertTask.run(task.id, task.productId, task.title, JSON.stringify(task.acceptanceCriteria), task.priority, task.status);
       }
       for (const room of seedWorkspace.rooms) {
         insertRoom.run(room.id, room.productId, room.taskId, room.assignedElfId, room.playbookId ?? null, room.title, room.status, room.startedAt, room.lastActivityAt, room.summary);
@@ -1004,7 +1025,8 @@ function makeTask(productId: string, title: string, acceptanceCriteria: string[]
     productId,
     title,
     acceptanceCriteria: criteria,
-    priority
+    priority,
+    status: "inbox"
   };
 }
 

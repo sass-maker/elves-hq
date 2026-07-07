@@ -155,6 +155,13 @@ const decisionActionTone: Record<DecisionAction, "default" | "outline" | "destru
 
 const productStatuses: Product["status"][] = ["active", "maintain", "paused", "killed"];
 const productPriorities: Product["priority"][] = ["P0", "P1", "P2"];
+const taskStatusTone: Record<Task["status"], "green" | "amber" | "red" | "blue" | "secondary"> = {
+  inbox: "secondary",
+  ready: "blue",
+  assigned: "green",
+  done: "secondary",
+  killed: "red"
+};
 
 function decisionActionFromLabel(label: string): DecisionAction | undefined {
   return (Object.entries(decisionActionLabels).find(([, value]) => value === label)?.[0] as DecisionAction | undefined) ?? undefined;
@@ -365,10 +372,12 @@ export function App() {
   const selectedProduct = workspace.products.find((product) => product.id === (selectedProductId === "all" ? selectedRoom?.productId : selectedProductId));
   const selectedProductInspection = selectedProduct ? productInspections[selectedProduct.id] : undefined;
   const assignedTaskIds = useMemo(() => new Set(workspace.rooms.map((room) => room.taskId)), [workspace.rooms]);
+  const selectedProductTasks = useMemo(() => (selectedProduct ? workspace.tasks.filter((task) => task.productId === selectedProduct.id) : []), [selectedProduct, workspace.tasks]);
   const selectedBacklogTasks = useMemo(
-    () => (selectedProduct ? workspace.tasks.filter((task) => task.productId === selectedProduct.id && !assignedTaskIds.has(task.id)) : []),
-    [assignedTaskIds, selectedProduct, workspace.tasks]
+    () => selectedProductTasks.filter((task) => (task.status === "inbox" || task.status === "ready") && !assignedTaskIds.has(task.id)),
+    [assignedTaskIds, selectedProductTasks]
   );
+  const selectedClosedTaskCount = selectedProductTasks.length - selectedBacklogTasks.length;
   const selectedProductMemory = selectedRoom ? productMemoryById[selectedRoom.productId] : undefined;
   const selectedMemoryDraftKey = selectedRoom ? `${selectedRoom.productId}:${selectedMemorySection}` : "";
   const selectedMemorySectionBody =
@@ -931,6 +940,26 @@ export function App() {
     setIsCreatingRoom(false);
   };
 
+  const updateBacklogTaskStatus = async (taskId: string, status: Task["status"]) => {
+    const response = await fetch(`${daemonBaseUrl}/api/tasks/${taskId}/status`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ status })
+    });
+
+    if (!response.ok) {
+      return;
+    }
+
+    const body = (await response.json()) as { task: Task; workspace: WorkspaceSeed; needs: DecisionItem[]; brief: DailyBrief; fm: ElfFmFeed };
+    setWorkspace(body.workspace);
+    setDecisionItems(body.needs);
+    setDailyBrief(body.brief);
+    setElfFmFeed(body.fm);
+  };
+
   const saveProductMemorySection = async (productId: string, section: ProductMemorySectionKey, body: string) => {
     const response = await fetch(`${daemonBaseUrl}/api/products/${productId}/memory/${section}`, {
       method: "POST",
@@ -1175,6 +1204,7 @@ export function App() {
         <TaskBacklogPanel
           product={selectedProduct}
           tasks={selectedBacklogTasks}
+          closedTaskCount={selectedClosedTaskCount}
           workspace={workspace}
           draft={newTask}
           assignment={backlogAssignment}
@@ -1182,6 +1212,7 @@ export function App() {
           onAssignmentChange={setBacklogAssignment}
           onCreateTask={createBacklogTask}
           onAssignTask={assignBacklogTask}
+          onUpdateTaskStatus={updateBacklogTaskStatus}
         />
 
         <div className="mb-4 flex items-center justify-between rounded-xl border border-stone-800 bg-stone-900/70 p-3">
@@ -1569,16 +1600,19 @@ function ElfFMPanel({
 function TaskBacklogPanel({
   product,
   tasks,
+  closedTaskCount,
   workspace,
   draft,
   assignment,
   onDraftChange,
   onAssignmentChange,
   onCreateTask,
-  onAssignTask
+  onAssignTask,
+  onUpdateTaskStatus
 }: {
   product?: Product;
   tasks: Task[];
+  closedTaskCount: number;
   workspace: WorkspaceSeed;
   draft: TaskDraft;
   assignment: BacklogAssignment;
@@ -1586,6 +1620,7 @@ function TaskBacklogPanel({
   onAssignmentChange: (assignment: BacklogAssignment) => void;
   onCreateTask: () => void;
   onAssignTask: (taskId: string) => void;
+  onUpdateTaskStatus: (taskId: string, status: Task["status"]) => void;
 }) {
   return (
     <section className="mb-4 rounded-xl border border-stone-800 bg-stone-900/70 p-3 shadow-sm" aria-label="Task Backlog">
@@ -1597,7 +1632,10 @@ function TaskBacklogPanel({
             <h3 className="truncate text-base font-bold tracking-normal">{product ? product.name : "Select a product"}</h3>
           </div>
         </div>
-        <Badge variant={tasks.length > 0 ? "blue" : "secondary"}>{tasks.length} open</Badge>
+        <div className="flex items-center gap-1.5">
+          {closedTaskCount > 0 ? <Badge variant="secondary">{closedTaskCount} closed</Badge> : null}
+          <Badge variant={tasks.length > 0 ? "blue" : "secondary"}>{tasks.length} open</Badge>
+        </div>
       </div>
 
       <div className="grid gap-2">
@@ -1656,22 +1694,36 @@ function TaskBacklogPanel({
       </div>
 
       <div className="mt-3 grid gap-2">
-        {tasks.slice(0, 4).map((task) => (
+        {tasks.slice(0, 5).map((task) => (
           <article className="grid gap-2 rounded-lg border border-stone-800 bg-stone-950/70 p-2.5" key={task.id}>
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <p className="truncate text-sm font-bold text-stone-100">{task.title}</p>
                 <p className="mt-1 text-xs text-stone-500">{task.acceptanceCriteria.length} criteria · {task.priority}</p>
               </div>
+              <Badge variant={taskStatusTone[task.status]}>{task.status}</Badge>
+            </div>
+            {task.acceptanceCriteria[0] ? <p className="line-clamp-2 text-xs leading-5 text-stone-400">{task.acceptanceCriteria[0]}</p> : null}
+            <div className="flex flex-wrap gap-1.5 border-t border-stone-800 pt-2">
+              {task.status === "inbox" ? (
+                <Button className="h-7 px-2 text-[11px]" size="sm" variant="outline" type="button" onClick={() => onUpdateTaskStatus(task.id, "ready")}>
+                  Ready
+                </Button>
+              ) : null}
               <Button className="h-7 px-2 text-[11px]" size="sm" type="button" onClick={() => onAssignTask(task.id)}>
                 Assign
               </Button>
+              <Button className="h-7 px-2 text-[11px]" size="sm" variant="outline" type="button" onClick={() => onUpdateTaskStatus(task.id, "done")}>
+                Done
+              </Button>
+              <Button className="h-7 px-2 text-[11px]" size="sm" variant="outline" type="button" onClick={() => onUpdateTaskStatus(task.id, "killed")}>
+                Kill
+              </Button>
             </div>
-            {task.acceptanceCriteria[0] ? <p className="line-clamp-2 text-xs leading-5 text-stone-400">{task.acceptanceCriteria[0]}</p> : null}
           </article>
         ))}
         {tasks.length === 0 ? <p className="rounded-lg border border-stone-800 bg-stone-950/60 px-3 py-2 text-sm text-stone-500">No unassigned tasks for this product.</p> : null}
-        {tasks.length > 4 ? <p className="text-xs font-semibold text-stone-500">{tasks.length - 4} more backlog tasks hidden in this compact view.</p> : null}
+        {tasks.length > 5 ? <p className="text-xs font-semibold text-stone-500">{tasks.length - 5} more backlog tasks hidden in this compact view.</p> : null}
       </div>
     </section>
   );

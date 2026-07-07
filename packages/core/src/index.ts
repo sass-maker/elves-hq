@@ -2,6 +2,8 @@ export type RoomStatus = "working" | "asking" | "blocked" | "failed" | "ready" |
 
 export type ProductStatus = "active" | "maintain" | "paused" | "killed";
 
+export type TaskStatus = "inbox" | "ready" | "assigned" | "done" | "killed";
+
 export type ElfRole = "builder" | "reviewer" | "tester" | "researcher";
 
 export interface Product {
@@ -49,6 +51,7 @@ export interface Task {
   title: string;
   acceptanceCriteria: string[];
   priority: "high" | "medium" | "low";
+  status: TaskStatus;
 }
 
 export interface Playbook {
@@ -844,6 +847,7 @@ export const seedWorkspace: WorkspaceSeed = {
       productId: "prod-codevetter",
       title: "Tighten PR import review flow",
       priority: "high",
+      status: "assigned",
       acceptanceCriteria: [
         "Import flow keeps existing repo context",
         "Review summary links to changed files",
@@ -855,6 +859,7 @@ export const seedWorkspace: WorkspaceSeed = {
       productId: "prod-saas-maker",
       title: "Extract useful task-room concepts from SaaS Maker",
       priority: "medium",
+      status: "assigned",
       acceptanceCriteria: [
         "Keep only local-first concepts",
         "Avoid Cloudflare/auth/widget dependencies",
@@ -866,6 +871,7 @@ export const seedWorkspace: WorkspaceSeed = {
       productId: "prod-high-signal",
       title: "Repair flaky brief renderer test",
       priority: "medium",
+      status: "assigned",
       acceptanceCriteria: [
         "Find the concrete flaky assertion",
         "Patch the narrowest behavior",
