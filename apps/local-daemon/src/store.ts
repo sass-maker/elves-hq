@@ -1218,6 +1218,16 @@ function decisionResolution(action: DecisionAction, note: string | undefined): {
         logLevel: "info",
         logMessage: `Founder requested a retry${suffix}`
       };
+    case "close":
+      return {
+        title: "Founder closed room",
+        status: "closed",
+        risk: "low",
+        roomStatus: "done",
+        summary: `Founder closed this room${suffix}`,
+        logLevel: "info",
+        logMessage: `Founder closed the room${suffix}`
+      };
   }
 }
 

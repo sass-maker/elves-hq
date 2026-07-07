@@ -563,7 +563,7 @@ function readDecisionInput(body: unknown): { action: DecisionAction; note?: stri
   }
 
   const record = body as { action?: unknown; note?: unknown };
-  if (record.action !== "approve" && record.action !== "request_fix" && record.action !== "reject" && record.action !== "snooze" && record.action !== "retry") {
+  if (record.action !== "approve" && record.action !== "request_fix" && record.action !== "reject" && record.action !== "snooze" && record.action !== "retry" && record.action !== "close") {
     throw new Error("Unsupported decision action");
   }
 

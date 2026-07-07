@@ -105,11 +105,11 @@ export interface Artifact {
 export interface Decision {
   id: string;
   title: string;
-  status: "open" | "approved" | "requested_fix" | "rejected" | "snoozed" | "retried" | "answered";
+  status: "open" | "approved" | "requested_fix" | "rejected" | "snoozed" | "retried" | "answered" | "closed";
   risk: "low" | "medium" | "high";
 }
 
-export type DecisionAction = "approve" | "request_fix" | "reject" | "snooze" | "retry";
+export type DecisionAction = "approve" | "request_fix" | "reject" | "snooze" | "retry" | "close";
 
 export interface DecisionItem {
   id: string;
@@ -444,7 +444,7 @@ export function buildDecisionItems(rooms: Room[]): DecisionItem[] {
           urgency: 1,
           recommendation: ask?.recommendation ?? "Open the room and answer the elf before continuing.",
           evidence: ask ? [`Options: ${ask.options.join(" / ")}`, ...recentLogs] : recentLogs,
-          actions: ["Approve", "Request fix", "Snooze"]
+          actions: ["Approve", "Request fix", "Snooze", "Close"]
         });
       }
 
@@ -460,7 +460,7 @@ export function buildDecisionItems(rooms: Room[]): DecisionItem[] {
           urgency: 2,
           recommendation: "Inspect the logs and decide whether to retry, kill, or add missing context.",
           evidence: [...failedArtifacts.map((artifact) => `${artifact.title}: ${artifact.summary}`), ...recentLogs],
-          actions: ["Retry", "Request fix", "Reject"]
+          actions: ["Retry", "Request fix", "Reject", "Close"]
         });
       }
 
@@ -476,7 +476,7 @@ export function buildDecisionItems(rooms: Room[]): DecisionItem[] {
           urgency: 3,
           recommendation: readyArtifacts.length > 0 ? "Review the artifacts and run the relevant check before accepting." : "Open the room and verify why it is marked ready.",
           evidence: readyArtifacts.length > 0 ? readyArtifacts.map((artifact) => `${artifact.title}: ${artifact.summary}`) : recentLogs,
-          actions: ["Approve", "Request fix", "Reject"]
+          actions: ["Approve", "Request fix", "Reject", "Close"]
         });
       }
 

@@ -88,6 +88,15 @@ The cockpit MUST let the founder resolve surfaced decisions without editing the 
 - **AND** the room log records the founder action
 - **AND** the room status changes so resolved items leave the Needs Me queue
 
+#### Scenario: Founder closes a stale room
+
+- **WHEN** the founder closes a room
+- **THEN** the daemon persists a low-risk closed decision record
+- **AND** any open asks for that room are cleared
+- **AND** the room status becomes `done`
+- **AND** the room log records that the founder closed the room
+- **AND** the room leaves the active room deck by default
+
 #### Scenario: Founder retries a room
 
 - **WHEN** the founder retries a room
@@ -575,4 +584,3 @@ Elves HQ MUST let the founder choose which detected package script is used for a
 - **WHEN** the founder clicks Check with Auto selected
 - **THEN** the cockpit omits a script key
 - **AND** the daemon chooses the first available supported gate
-

@@ -130,6 +130,7 @@ type RoomCommand =
   | "snooze"
   | "reject"
   | "retry"
+  | "close"
   | "kill";
 
 type OverviewPanel = "needs" | "fm" | "backlog" | "brief";
@@ -198,7 +199,8 @@ const decisionActionLabels: Record<DecisionAction, string> = {
   request_fix: "Request fix",
   reject: "Reject",
   snooze: "Snooze",
-  retry: "Retry"
+  retry: "Retry",
+  close: "Close"
 };
 
 const productStatuses: Product["status"][] = ["active", "maintain", "paused", "killed"];
@@ -2955,6 +2957,7 @@ function RoomDetail({
     { id: "snooze", label: "Snooze room", group: "Decision" },
     { id: "reject", label: "Reject room", group: "Decision" },
     { id: "retry", label: "Retry latest run", group: "Decision", disabled: runs.length === 0 },
+    { id: "close", label: "Close room", group: "Decision" },
     { id: "kill", label: "Stop active run", group: "Decision", disabled: !activeRun }
   ];
   const selectedCommand = roomCommands.find((command) => command.id === selectedRoomCommand) ?? roomCommands[0];
@@ -3001,6 +3004,7 @@ function RoomDetail({
       case "snooze":
       case "reject":
       case "retry":
+      case "close":
         onDecisionAction(selectedRoomCommand, decisionNote);
         break;
       case "kill":
