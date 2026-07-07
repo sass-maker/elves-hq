@@ -9,6 +9,7 @@ const projectRoot = fileURLToPath(new URL("../../../", import.meta.url));
 const runTimeoutMs = Number(process.env.ELVES_HQ_RUN_TIMEOUT_MS ?? 120_000);
 const maxRetries = Math.max(1, Number(process.env.ELVES_HQ_MAX_RETRIES ?? 3));
 const runsRoot = fileURLToPath(new URL("../../../runs/", import.meta.url));
+const codexCommand = process.env.ELVES_HQ_CODEX_COMMAND ?? "codex";
 
 export interface StartRunOptions {
   mode: ElfRun["mode"];
@@ -436,7 +437,7 @@ export class RoomProcessManager {
     ].join("\n");
 
     return spawn(
-      "codex",
+      codexCommand,
       [
         "--ask-for-approval",
         "never",
@@ -550,9 +551,9 @@ export class RoomProcessManager {
       return `node worktree-dry-run (${taskTitle})`;
     }
     if (options.mode === "codex-worktree") {
-      return `codex --ask-for-approval never exec --json --sandbox workspace-write -C <isolated-worktree>`;
+      return `${codexCommand} --ask-for-approval never exec --json --sandbox workspace-write -C <isolated-worktree>`;
     }
-    return `codex --ask-for-approval never exec --json --sandbox read-only -C ${localPath}`;
+    return `${codexCommand} --ask-for-approval never exec --json --sandbox read-only -C ${localPath}`;
   }
 
   private createWorktreeIfNeeded(run: ElfRun, localPath: string, taskTitle: string, mode: ElfRun["mode"]) {
@@ -867,7 +868,7 @@ function preflightRunLaunch(localPath: string, mode: ElfRun["mode"]): { ok: true
   }
 
   if (mode === "codex-readonly") {
-    return { ok: true };
+    return preflightCodexCommand(mode);
   }
 
   const gitCheck = spawnSync("git", ["-C", sourcePath, "rev-parse", "--show-toplevel"], { encoding: "utf8" });
@@ -875,7 +876,24 @@ function preflightRunLaunch(localPath: string, mode: ElfRun["mode"]): { ok: true
     return { ok: false, message: `Run preflight blocked ${mode}: product path is not a git repository: ${sourcePath}` };
   }
 
+  if (mode === "codex-worktree") {
+    return preflightCodexCommand(mode);
+  }
+
   return { ok: true };
+}
+
+function preflightCodexCommand(mode: ElfRun["mode"]): { ok: true } | { ok: false; message: string } {
+  const result = spawnSync(codexCommand, ["--version"], { encoding: "utf8" });
+  if (result.status === 0) {
+    return { ok: true };
+  }
+
+  const detail = result.error instanceof Error ? result.error.message : result.stderr.trim();
+  return {
+    ok: false,
+    message: `Run preflight blocked ${mode}: Codex command is not available (${codexCommand}). ${detail || "Install Codex CLI or set ELVES_HQ_CODEX_COMMAND."}`
+  };
 }
 
 function detectCheckCommand(worktreePath: string, requestedScript: CheckScriptKey | undefined) {

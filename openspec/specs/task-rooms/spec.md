@@ -145,6 +145,7 @@ The V0 daemon MUST be able to start, log, persist, inspect, and stop room-scoped
 
 - **WHEN** the founder starts a read-only Codex inspection
 - **THEN** the daemon launches `codex exec` with read-only sandboxing
+- **AND** the daemon verifies the configured Codex command before creating a run record
 - **AND** Codex output is appended to room logs
 - **AND** Codex JSONL events are normalized into readable room log lines while the durable run log keeps the raw stdout/stderr stream
 - **AND** stdout/stderr output is captured to a durable run log artifact
@@ -165,6 +166,7 @@ The V0 daemon MUST be able to start, log, persist, inspect, and stop room-scoped
 
 - **WHEN** the founder starts a worktree-backed room run
 - **THEN** the daemon creates an isolated git worktree and branch for the run
+- **AND** Codex worktree mode verifies the configured Codex command before creating a run record
 - **AND** the daemon persists the run workspace path and branch name on the run record
 - **AND** process output is appended to room logs
 - **AND** stdout/stderr output is captured to a durable run log artifact
