@@ -2275,6 +2275,7 @@ function TerminalPanel({
           : undefined
       }
     >
+      <div className={cn("absolute inset-y-0 left-0 w-1.5", terminalToneClasses[tone].rail)} />
       <header className={cn("flex items-center justify-between border-b bg-[#020408] px-4 py-3", terminalToneClasses[tone].header)}>
         <div className="flex min-w-0 items-center gap-2">
           <span className={cn("size-2 rounded-full shadow-[0_0_12px_currentColor]", terminalToneClasses[tone].dot)} />
@@ -2450,13 +2451,14 @@ function TerminalCommandButton({
   );
 }
 
-type TerminalTone = "blue" | "amber" | "red" | "muted" | "alert";
+type TerminalTone = "green" | "blue" | "amber" | "red" | "muted" | "alert";
 
 const terminalToneClasses: Record<
   TerminalTone,
   {
     panel: string;
     header: string;
+    rail: string;
     dot: string;
     title: string;
     body: string;
@@ -2465,9 +2467,21 @@ const terminalToneClasses: Record<
     cursor: string;
   }
 > = {
+  green: {
+    panel: "border-emerald-300/30",
+    header: "border-emerald-300/20",
+    rail: "bg-emerald-300/85",
+    dot: "bg-emerald-200 text-emerald-200",
+    title: "text-emerald-100",
+    body: "text-slate-300",
+    footer: "border-emerald-300/20",
+    icon: "text-slate-500 hover:text-emerald-100",
+    cursor: "bg-emerald-200"
+  },
   blue: {
     panel: "border-blue-300/30",
     header: "border-blue-300/20",
+    rail: "bg-blue-300/85",
     dot: "bg-blue-200 text-blue-200",
     title: "text-blue-100",
     body: "text-slate-300",
@@ -2478,6 +2492,7 @@ const terminalToneClasses: Record<
   amber: {
     panel: "border-amber-300/24",
     header: "border-amber-300/18",
+    rail: "bg-amber-300/85",
     dot: "bg-amber-200 text-amber-200",
     title: "text-amber-100",
     body: "text-amber-100/75",
@@ -2488,6 +2503,7 @@ const terminalToneClasses: Record<
   red: {
     panel: "border-red-300/28 bg-[#060203]",
     header: "border-red-300/18",
+    rail: "bg-red-300/85",
     dot: "bg-red-200 text-red-200",
     title: "text-red-100",
     body: "text-red-100/75",
@@ -2498,6 +2514,7 @@ const terminalToneClasses: Record<
   muted: {
     panel: "border-slate-700/70",
     header: "border-slate-700/70",
+    rail: "bg-slate-600/70",
     dot: "bg-slate-300 text-slate-300",
     title: "text-slate-300",
     body: "text-slate-400",
@@ -2508,6 +2525,7 @@ const terminalToneClasses: Record<
   alert: {
     panel: "border-red-300/35 bg-[#050102]",
     header: "border-red-300/20",
+    rail: "bg-red-300/90",
     dot: "bg-red-200 text-red-200 animate-pulse",
     title: "text-red-100",
     body: "text-red-100/78",
@@ -2527,7 +2545,10 @@ function terminalToneForRoom(room: Room, variant: "default" | "alert"): Terminal
   if (room.status === "asking") {
     return "amber";
   }
-  if (room.status === "working" || room.status === "ready") {
+  if (room.status === "working") {
+    return "green";
+  }
+  if (room.status === "ready") {
     return "blue";
   }
   return "muted";
