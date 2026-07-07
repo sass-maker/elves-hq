@@ -355,7 +355,19 @@ function readCheckScriptKey(body: unknown): CheckScriptKey | undefined {
 }
 
 function readMemorySectionKey(value: string): ProductMemorySectionKey {
-  if (value === "PRODUCT" || value === "STRATEGY" || value === "ARCHITECTURE" || value === "DECISIONS" || value === "DO_NOT_DO" || value === "RECENT_LEARNINGS") {
+  if (
+    value === "PRODUCT" ||
+    value === "STRATEGY" ||
+    value === "CUSTOMERS" ||
+    value === "ROADMAP" ||
+    value === "ARCHITECTURE" ||
+    value === "DECISIONS" ||
+    value === "DO_NOT_DO" ||
+    value === "RECENT_LEARNINGS" ||
+    value === "FEEDBACK" ||
+    value === "METRICS" ||
+    value === "BRAND"
+  ) {
     return value;
   }
 

@@ -1300,10 +1300,15 @@ function defaultMemoryBody(product: Product, key: ProductMemorySectionKey) {
   const headings: Record<ProductMemorySectionKey, string> = {
     PRODUCT: "Product",
     STRATEGY: "Strategy",
+    CUSTOMERS: "Customers",
+    ROADMAP: "Roadmap",
     ARCHITECTURE: "Architecture",
     DECISIONS: "Decisions",
     DO_NOT_DO: "Do Not Do",
-    RECENT_LEARNINGS: "Recent Learnings"
+    RECENT_LEARNINGS: "Recent Learnings",
+    FEEDBACK: "Feedback",
+    METRICS: "Metrics",
+    BRAND: "Brand"
   };
 
   const intro =

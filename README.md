@@ -41,7 +41,7 @@ Every room run captures its prompt at `runs/<run-id>/prompt.md`. Generated promp
 
 Each room also has a next-run instruction composer. Use it for tactical one-off guidance before pressing Dry, Read, Draft, or Build; the daemon embeds those instructions inside the generated run prompt and clears the draft after launch.
 
-Product memory is stored as local Markdown under `memory/<product-slug>/` and ignored by git. The room cockpit can edit `PRODUCT.md`, `STRATEGY.md`, `ARCHITECTURE.md`, `DECISIONS.md`, `DO_NOT_DO.md`, and `RECENT_LEARNINGS.md`; generated run prompts include those sections.
+Product memory is stored as local Markdown under `memory/<product-slug>/` and ignored by git. The room cockpit can edit `PRODUCT.md`, `STRATEGY.md`, `CUSTOMERS.md`, `ROADMAP.md`, `ARCHITECTURE.md`, `DECISIONS.md`, `DO_NOT_DO.md`, `RECENT_LEARNINGS.md`, `FEEDBACK.md`, `METRICS.md`, and `BRAND.md`; generated run prompts include those sections.
 
 Built-in playbooks are available when creating a room. V0 includes Ship Small Feature, Fix Bug, Fix Failing Test, Review Diff, Refactor Safely, and Daily Brief. The selected playbook is shown in the room and injected into generated prompts with steps, tools, gates, escalation rules, and completion criteria.
 
