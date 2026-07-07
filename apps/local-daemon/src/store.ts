@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync, realpathSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
@@ -33,17 +33,8 @@ import {
 } from "@elves-hq/core";
 
 const databasePath = fileURLToPath(new URL("../../../data/elves.db", import.meta.url));
-const fleetRegistryPath = fileURLToPath(new URL("../../../../saas-maker/foundry.projects.json", import.meta.url));
 const memoryRoot = fileURLToPath(new URL("../../../memory/", import.meta.url));
 const transcriptsRoot = fileURLToPath(new URL("../../../runs/room-transcripts/", import.meta.url));
-
-interface RegistryProject {
-  desc?: string;
-  url?: string;
-  tier?: "active-ai" | "core" | "helper";
-  priority?: Product["priority"];
-  maturity?: string;
-}
 
 interface RoomRow {
   id: string;
@@ -124,6 +115,14 @@ export interface CreateRoomInput {
   acceptanceCriteria: string[];
   assignedElfId?: string;
   playbookId?: string;
+}
+
+export interface CreateProductInput {
+  name: string;
+  localPath: string;
+  currentGoal?: string;
+  priority?: Product["priority"];
+  status?: Product["status"];
 }
 
 export interface ResolveDecisionInput {
@@ -282,6 +281,44 @@ export class WorkspaceStore {
       throw new Error(`Product not found: ${productId}`);
     }
     return product;
+  }
+
+  createProduct(input: CreateProductInput): Product {
+    const name = input.name.trim();
+    const localPath = input.localPath.trim();
+    if (!name) {
+      throw new Error("Product name is required.");
+    }
+    if (!localPath) {
+      throw new Error("Local folder path is required.");
+    }
+
+    const slug = safePathSegment(name);
+    const product: Product = {
+      id: `prod-${slug}`,
+      name,
+      slug,
+      localPath: normalizeLocalPath(localPath),
+      status: input.status ?? "active",
+      priority: input.priority ?? "P1",
+      currentGoal: input.currentGoal?.trim() || "Manual local product. Add the current goal before assigning larger elf work."
+    };
+
+    this.db
+      .prepare(
+        `INSERT INTO products (id, name, slug, localPath, status, priority, currentGoal)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           name = excluded.name,
+           slug = excluded.slug,
+           localPath = excluded.localPath,
+           status = excluded.status,
+           priority = excluded.priority,
+           currentGoal = excluded.currentGoal`
+      )
+      .run(product.id, product.name, product.slug, product.localPath, product.status, product.priority, product.currentGoal);
+
+    return this.getProduct(product.id);
   }
 
   getTask(taskId: string): Task {
@@ -525,38 +562,6 @@ export class WorkspaceStore {
 
   listRuns(roomId: string): ElfRun[] {
     return (this.db.prepare("SELECT * FROM elf_runs WHERE room_id = ? ORDER BY started_at DESC").all(roomId) as unknown as RunRow[]).map(hydrateRun);
-  }
-
-  importFleetRegistry(): { imported: number } {
-    const products = loadFleetRegistryProducts();
-    if (products.length === 0) {
-      return { imported: 0 };
-    }
-
-    const upsertProduct = this.db.prepare(`
-      INSERT INTO products (id, name, slug, localPath, status, priority, currentGoal)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET
-        name = excluded.name,
-        slug = excluded.slug,
-        localPath = excluded.localPath,
-        status = excluded.status,
-        priority = excluded.priority,
-        currentGoal = excluded.currentGoal
-    `);
-
-    this.db.exec("BEGIN");
-    try {
-      for (const product of products) {
-        upsertProduct.run(product.id, product.name, product.slug, product.localPath, product.status, product.priority, product.currentGoal);
-      }
-      this.db.exec("COMMIT");
-    } catch (error) {
-      this.db.exec("ROLLBACK");
-      throw error;
-    }
-
-    return { imported: products.length };
   }
 
   addRoomNote(roomId: string, body: string): Room {
@@ -837,8 +842,7 @@ export class WorkspaceStore {
 
     this.db.exec("BEGIN");
     try {
-      const seedProducts = mergeProducts(loadFleetRegistryProducts(), seedWorkspace.products);
-      for (const product of seedProducts) {
+      for (const product of seedWorkspace.products) {
         insertProduct.run(product.id, product.name, product.slug, product.localPath, product.status, product.priority, product.currentGoal);
       }
       for (const elf of seedWorkspace.elves) {
@@ -964,17 +968,6 @@ function decisionResolution(action: DecisionAction, note: string | undefined): {
   }
 }
 
-function mergeProducts(primary: Product[], fallback: Product[]): Product[] {
-  const productsById = new Map<string, Product>();
-  for (const product of fallback) {
-    productsById.set(product.id, product);
-  }
-  for (const product of primary) {
-    productsById.set(product.id, product);
-  }
-  return [...productsById.values()];
-}
-
 function roomTranscriptPath(roomId: string) {
   return resolve(transcriptsRoot, `${safePathSegment(roomId)}.md`);
 }
@@ -983,44 +976,20 @@ function markdownList(items: string[]) {
   return items.length > 0 ? items.map((item) => `- ${item}`).join("\n") : "- None recorded.";
 }
 
-function loadFleetRegistryProducts(): Product[] {
-  if (!existsSync(fleetRegistryPath)) {
-    return [];
-  }
-
-  const registry = JSON.parse(readFileSync(fleetRegistryPath, "utf8")) as Record<string, RegistryProject>;
-
-  return Object.entries(registry).map(([key, value]): Product => {
-    const repoName = repoNameFromUrl(value.url) ?? key;
-    const slug = key === "CodeVetter" ? "codevetter" : slugify(repoName);
-    const name = displayName(key, repoName);
-    const status: Product["status"] = value.tier === "helper" ? "maintain" : "active";
-
-    return {
-      id: `prod-${slug}`,
-      name,
-      slug,
-      localPath: `../${slug}`,
-      status,
-      priority: value.priority ?? "P2",
-      currentGoal: value.desc ?? "Imported from the SaaS Maker fleet registry."
-    };
-  });
-}
-
-function repoNameFromUrl(url: string | undefined) {
-  if (!url) {
-    return undefined;
-  }
-  const withoutGit = url.replace(/\.git$/, "");
-  return withoutGit.split(/[/:]/).filter(Boolean).at(-1);
-}
-
 function slugify(value: string) {
   return value
     .replace(/([a-z])([A-Z])/g, "$1-$2")
     .replace(/_/g, "-")
     .toLowerCase();
+}
+
+function normalizeLocalPath(localPath: string) {
+  const expanded = localPath.startsWith("~/") ? `${process.env.HOME ?? "~"}${localPath.slice(1)}` : localPath;
+  try {
+    return realpathSync(expanded);
+  } catch {
+    return expanded;
+  }
 }
 
 function safePathSegment(value: string) {
@@ -1043,32 +1012,4 @@ function defaultMemoryBody(product: Product, key: ProductMemorySectionKey) {
       : [`Product: ${product.name}`, "Add durable notes here."];
 
   return [`# ${headings[key]}`, "", ...intro, "", "## Notes", "", "- "].join("\n");
-}
-
-function displayName(key: string, repoName: string) {
-  if (key === "CodeVetter") {
-    return "CodeVetter";
-  }
-  if (key === "saas-maker") {
-    return "SaaS Maker";
-  }
-  const source = repoName || key;
-  const acronyms: Record<string, string> = {
-    ai: "AI",
-    api: "API",
-    cli: "CLI",
-    dr: "DR",
-    gpt: "GPT",
-    hq: "HQ",
-    tv: "TV",
-    ui: "UI"
-  };
-
-  return source
-    .replace(/_/g, "-")
-    .replace(/([a-z])([A-Z])/g, "$1-$2")
-    .split("-")
-    .filter(Boolean)
-    .map((part) => acronyms[part.toLowerCase()] ?? part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
 }

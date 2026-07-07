@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import type { CheckScriptKey, DecisionAction, ElfRun, ProductMemorySectionKey } from "@elves-hq/core";
+import type { CheckScriptKey, DecisionAction, ElfRun, Product, ProductMemorySectionKey } from "@elves-hq/core";
 import { RoomProcessManager } from "./process-manager";
 import { WorkspaceStore } from "./store";
 
@@ -70,9 +70,10 @@ const server = createServer(async (request, response) => {
       return;
     }
 
-    if (request.method === "POST" && url.pathname === "/api/import/fleet-registry") {
-      const result = store.importFleetRegistry();
-      sendJson(response, 200, { ...result, workspace: store.getWorkspace() });
+    if (request.method === "POST" && url.pathname === "/api/products") {
+      const body = await readJson(request);
+      const product = store.createProduct(readCreateProductInput(body));
+      sendJson(response, 200, { product, workspace: store.getWorkspace() });
       return;
     }
 
@@ -328,6 +329,45 @@ function readCreateRoomInput(body: unknown) {
     assignedElfId: typeof record.assignedElfId === "string" ? record.assignedElfId : undefined,
     playbookId: typeof record.playbookId === "string" ? record.playbookId : undefined
   };
+}
+
+function readCreateProductInput(body: unknown) {
+  if (!body || typeof body !== "object") {
+    throw new Error("Product body is required");
+  }
+  const value = body as { name?: unknown; localPath?: unknown; currentGoal?: unknown; priority?: unknown; status?: unknown };
+  if (typeof value.name !== "string" || typeof value.localPath !== "string") {
+    throw new Error("Product name and localPath are required");
+  }
+  const priority = readOptionalProductPriority(value.priority);
+  const status = readOptionalProductStatus(value.status);
+  return {
+    name: value.name,
+    localPath: value.localPath,
+    currentGoal: typeof value.currentGoal === "string" ? value.currentGoal : undefined,
+    priority,
+    status
+  };
+}
+
+function readOptionalProductPriority(value: unknown): Product["priority"] | undefined {
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+  if (value === "P0" || value === "P1" || value === "P2") {
+    return value;
+  }
+  throw new Error("Unsupported product priority");
+}
+
+function readOptionalProductStatus(value: unknown): Product["status"] | undefined {
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+  if (value === "active" || value === "maintain" || value === "paused" || value === "killed") {
+    return value;
+  }
+  throw new Error("Unsupported product status");
 }
 
 function readDecisionInput(body: unknown): { action: DecisionAction; note?: string } {
