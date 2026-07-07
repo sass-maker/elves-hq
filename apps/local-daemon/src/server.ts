@@ -272,6 +272,12 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    const applyDiffMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/apply-diff$/);
+    if (request.method === "POST" && applyDiffMatch) {
+      sendJson(response, 200, processManager.applyApprovedDiff(applyDiffMatch[1]));
+      return;
+    }
+
     const noteMatch = url.pathname.match(/^\/api\/rooms\/([^/]+)\/notes$/);
     if (request.method === "POST" && noteMatch) {
       const body = await readJson(request);

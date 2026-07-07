@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "no
 import { dirname, resolve } from "node:path";
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { getBlockingArtifacts, type CheckScriptKey, type ElfRun, type Playbook, type Product, type ProductMemory, type Room, type Task } from "@elves-hq/core";
+import { getApprovalBlockers, getBlockingArtifacts, type CheckScriptKey, type ElfRun, type Playbook, type Product, type ProductMemory, type Room, type Task } from "@elves-hq/core";
 import { WorkspaceStore } from "./store";
 
 const projectRoot = fileURLToPath(new URL("../../../", import.meta.url));
@@ -274,6 +274,88 @@ export class RoomProcessManager {
       branchName,
       branchRemoved: branchCleanup.removed,
       worktreePath,
+      room: this.store.getRoom(run.roomId)
+    };
+  }
+
+  applyApprovedDiff(runId: string) {
+    const run = this.store.getRun(runId);
+    if (run.status === "running") {
+      throw new Error("Cannot apply a diff while the room run is still active");
+    }
+    if (run.status !== "completed") {
+      throw new Error(`Cannot apply a diff from a ${run.status} run`);
+    }
+    if (!run.mode.includes("worktree")) {
+      throw new Error("Applying a diff requires a worktree-backed run");
+    }
+
+    const room = this.store.getRoom(run.roomId);
+    const approved = room.decisions.some((decision) => decision.status === "approved");
+    if (!approved) {
+      throw new Error("Founder approval is required before applying this worktree diff.");
+    }
+
+    const blockers = getApprovalBlockers(room);
+    if (blockers.length > 0) {
+      throw new Error(`Cannot apply this diff yet. ${blockers.join(" ")}`);
+    }
+
+    const product = this.store.getProduct(room.productId);
+    const sourcePath = resolve(projectRoot, product.localPath);
+    const diffPath = resolve(runsRoot, run.id, "diff.patch");
+    if (!existsSync(diffPath)) {
+      throw new Error(`Missing captured diff for run ${run.id}`);
+    }
+
+    const gitCheck = spawnSync("git", ["-C", sourcePath, "rev-parse", "--show-toplevel"], { encoding: "utf8" });
+    if (gitCheck.status !== 0) {
+      throw new Error(`Product path is not a git repository: ${sourcePath}`);
+    }
+
+    const status = spawnSync("git", ["-C", sourcePath, "status", "--short"], { encoding: "utf8" });
+    if (status.status !== 0) {
+      throw new Error(status.stderr.trim() || `Could not inspect git status for ${sourcePath}`);
+    }
+    if (status.stdout.trim()) {
+      throw new Error("Target product checkout has uncommitted changes. Commit, stash, or clean them before applying this diff.");
+    }
+
+    const check = spawnSync("git", ["-C", sourcePath, "apply", "--check", diffPath], { encoding: "utf8", maxBuffer: 1024 * 1024 * 10 });
+    if (check.status !== 0) {
+      throw new Error(check.stderr.trim() || `Captured diff does not apply cleanly for ${run.id}`);
+    }
+
+    const apply = spawnSync("git", ["-C", sourcePath, "apply", diffPath], { encoding: "utf8", maxBuffer: 1024 * 1024 * 10 });
+    const output = [
+      `$ git -C ${sourcePath} apply --check ${diffPath}`,
+      check.stdout.trim(),
+      check.stderr.trim() ? `[check stderr]\n${check.stderr.trim()}` : "",
+      "",
+      `$ git -C ${sourcePath} apply ${diffPath}`,
+      apply.stdout.trim(),
+      apply.stderr.trim() ? `[apply stderr]\n${apply.stderr.trim()}` : ""
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    if (apply.status !== 0) {
+      throw new Error(apply.stderr.trim() || `Failed to apply captured diff for ${run.id}`);
+    }
+
+    this.store.addArtifact(run.roomId, {
+      type: "log",
+      title: `Applied worktree diff for ${run.id}`,
+      summary: `Applied captured diff to ${sourcePath}. Review and commit in the product checkout when ready.`,
+      status: "passed"
+    });
+    this.store.appendRoomLog(run.roomId, "success", `Applied approved worktree diff from ${run.id} to ${sourcePath}.`);
+
+    return {
+      runId: run.id,
+      sourcePath,
+      diffPath,
+      output: output || `Applied ${diffPath} to ${sourcePath}.`,
       room: this.store.getRoom(run.roomId)
     };
   }

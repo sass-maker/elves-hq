@@ -201,6 +201,7 @@ export function App() {
   const [checkPreview, setCheckPreview] = useState<Record<string, string>>({});
   const [codevetterPreview, setCodevetterPreview] = useState<Record<string, string>>({});
   const [cleanupPreview, setCleanupPreview] = useState<Record<string, string>>({});
+  const [applyPreview, setApplyPreview] = useState<Record<string, string>>({});
   const [transcriptPreview, setTranscriptPreview] = useState<Record<string, string>>({});
   const [decisionPreview, setDecisionPreview] = useState<Record<string, string>>({});
   const [dailyBriefMarkdown, setDailyBriefMarkdown] = useState<string>("");
@@ -948,6 +949,25 @@ export function App() {
     });
   };
 
+  const applyLatestDiff = async (roomId: string) => {
+    const run = roomRuns[roomId]?.find((item) => item.mode.includes("worktree") && item.status === "completed");
+    if (!run) {
+      setApplyPreview((current) => ({ ...current, [roomId]: "No completed worktree run has a captured diff to apply yet." }));
+      return;
+    }
+
+    const response = await fetch(`${daemonBaseUrl}/api/runs/${run.id}/apply-diff`, { method: "POST" });
+    if (!response.ok) {
+      const body = (await response.json().catch(() => ({ error: "Diff apply failed." }))) as { error?: string };
+      setApplyPreview((current) => ({ ...current, [roomId]: body.error ?? "Diff apply failed." }));
+      return;
+    }
+
+    const body = (await response.json()) as { output: string; room: Room };
+    replaceRoom(body.room);
+    setApplyPreview((current) => ({ ...current, [roomId]: body.output }));
+  };
+
   const exportDailyBriefMarkdown = async () => {
     const response = await fetch(`${daemonBaseUrl}/api/briefs/daily.md`);
     if (!response.ok) {
@@ -1266,6 +1286,7 @@ export function App() {
           checkPreview={checkPreview[selectedRoom.id]}
           codevetterPreview={codevetterPreview[selectedRoom.id]}
           cleanupPreview={cleanupPreview[selectedRoom.id]}
+          applyPreview={applyPreview[selectedRoom.id]}
           transcriptPreview={transcriptPreview[selectedRoom.id]}
           decisionPreview={decisionPreview[selectedRoom.id]}
           productMemory={selectedProductMemory}
@@ -1289,6 +1310,7 @@ export function App() {
           onRunCheck={() => runLatestCheck(selectedRoom.id)}
           onRunCodeVetter={() => runLatestCodeVetter(selectedRoom.id)}
           onCleanupWorktree={() => cleanupLatestWorktree(selectedRoom.id)}
+          onApplyDiff={() => applyLatestDiff(selectedRoom.id)}
           onGenerateTranscript={() => generateRoomTranscript(selectedRoom.id)}
           onKillRun={() => killLatestRun(selectedRoom.id)}
           onDecisionAction={(action, note) => performDecisionAction(selectedRoom.id, action, note)}
@@ -1931,6 +1953,7 @@ function RoomDetail({
   checkPreview,
   codevetterPreview,
   cleanupPreview,
+  applyPreview,
   transcriptPreview,
   decisionPreview,
   productMemory,
@@ -1954,6 +1977,7 @@ function RoomDetail({
   onRunCheck,
   onRunCodeVetter,
   onCleanupWorktree,
+  onApplyDiff,
   onGenerateTranscript,
   onKillRun,
   onDecisionAction,
@@ -1969,6 +1993,7 @@ function RoomDetail({
   checkPreview?: string;
   codevetterPreview?: string;
   cleanupPreview?: string;
+  applyPreview?: string;
   transcriptPreview?: string;
   decisionPreview?: string;
   productMemory?: ProductMemory;
@@ -1992,6 +2017,7 @@ function RoomDetail({
   onRunCheck: () => void;
   onRunCodeVetter: () => void;
   onCleanupWorktree: () => void;
+  onApplyDiff: () => void;
   onGenerateTranscript: () => void;
   onKillRun: () => void;
   onDecisionAction: (action: DecisionAction, note?: string) => void;
@@ -2085,6 +2111,7 @@ function RoomDetail({
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onOpenDiff}><GitBranch size={15} />Diff</Button>
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onRunCheck}><TestTube2 size={15} />Check</Button>
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onRunCodeVetter}><ShieldCheck size={15} />Vet</Button>
+            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onApplyDiff}><GitBranch size={15} />Apply</Button>
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onCleanupWorktree}><Trash2 size={15} />Clean</Button>
             <Button className="min-w-0 px-2" variant="destructive" size="sm" type="button" onClick={onKillRun} disabled={!activeRun}><CircleStop size={15} />Kill</Button>
           </div>
@@ -2220,6 +2247,15 @@ function RoomDetail({
           <SectionTitle icon={<Trash2 size={16} />} title="Worktree cleanup" />
           <pre className="max-h-40 overflow-auto rounded-lg bg-stone-950 p-3 text-xs leading-5 text-stone-100">
             <code>{cleanupPreview}</code>
+          </pre>
+        </section>
+      ) : null}
+
+      {applyPreview ? (
+        <section>
+          <SectionTitle icon={<GitBranch size={16} />} title="Applied diff" />
+          <pre className="max-h-40 overflow-auto rounded-lg bg-stone-950 p-3 text-xs leading-5 text-stone-100">
+            <code>{applyPreview}</code>
           </pre>
         </section>
       ) : null}
