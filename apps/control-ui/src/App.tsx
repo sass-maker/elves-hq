@@ -51,6 +51,7 @@ import {
   type ProductMemorySectionKey,
   type Room,
   type RoomStatus,
+  type Task,
   type WorkspaceSeed
 } from "@elves-hq/core";
 import { useEffect, useMemo, useState } from "react";
@@ -100,6 +101,17 @@ type PaneLayout = {
 };
 
 type RoomWorkbenchTab = "logs" | "artifacts" | "notes" | "memory";
+
+type TaskDraft = {
+  title: string;
+  acceptanceCriteria: string;
+  priority: Task["priority"];
+};
+
+type BacklogAssignment = {
+  assignedElfId: string;
+  playbookId: string;
+};
 
 const roomWorkbenchTabs: Array<{ id: RoomWorkbenchTab; label: string }> = [
   { id: "logs", label: "Logs" },
@@ -206,6 +218,15 @@ export function App() {
     localPath: "",
     currentGoal: ""
   });
+  const [newTask, setNewTask] = useState({
+    title: "",
+    acceptanceCriteria: "",
+    priority: "medium" as Task["priority"]
+  });
+  const [backlogAssignment, setBacklogAssignment] = useState({
+    assignedElfId: defaultRoomElfId(seedWorkspace),
+    playbookId: seedWorkspace.playbooks[0]?.id ?? ""
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -254,7 +275,12 @@ export function App() {
       }
       return { ...current, assignedElfId };
     });
-  }, [workspace.elves]);
+    setBacklogAssignment((current) => {
+      const assignedElfId = workspace.elves.some((elf) => elf.id === current.assignedElfId) ? current.assignedElfId : defaultRoomElfId(workspace);
+      const playbookId = workspace.playbooks.some((playbook) => playbook.id === current.playbookId) ? current.playbookId : workspace.playbooks[0]?.id ?? "";
+      return assignedElfId === current.assignedElfId && playbookId === current.playbookId ? current : { assignedElfId, playbookId };
+    });
+  }, [workspace.elves, workspace.playbooks]);
 
   useEffect(() => {
     if (daemonState !== "local" || !selectedRoomId) {
@@ -319,6 +345,11 @@ export function App() {
   const selectedRoom = workspace.rooms.find((room) => room.id === selectedRoomId) ?? visibleRooms[0] ?? workspace.rooms[0];
   const selectedProduct = workspace.products.find((product) => product.id === (selectedProductId === "all" ? selectedRoom?.productId : selectedProductId));
   const selectedProductInspection = selectedProduct ? productInspections[selectedProduct.id] : undefined;
+  const assignedTaskIds = useMemo(() => new Set(workspace.rooms.map((room) => room.taskId)), [workspace.rooms]);
+  const selectedBacklogTasks = useMemo(
+    () => (selectedProduct ? workspace.tasks.filter((task) => task.productId === selectedProduct.id && !assignedTaskIds.has(task.id)) : []),
+    [assignedTaskIds, selectedProduct, workspace.tasks]
+  );
   const selectedProductMemory = selectedRoom ? productMemoryById[selectedRoom.productId] : undefined;
   const selectedMemoryDraftKey = selectedRoom ? `${selectedRoom.productId}:${selectedMemorySection}` : "";
   const selectedMemorySectionBody =
@@ -761,6 +792,61 @@ export function App() {
     setIsCreatingRoom(false);
   };
 
+  const createBacklogTask = async () => {
+    const title = newTask.title.trim();
+    if (!title || !selectedProduct) {
+      return;
+    }
+
+    const response = await fetch(`${daemonBaseUrl}/api/tasks`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        productId: selectedProduct.id,
+        title,
+        priority: newTask.priority,
+        acceptanceCriteria: newTask.acceptanceCriteria
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter(Boolean)
+      })
+    });
+
+    if (!response.ok) {
+      return;
+    }
+
+    const body = (await response.json()) as { task: Task; workspace: WorkspaceSeed };
+    setWorkspace(body.workspace);
+    setSelectedProductId(body.task.productId);
+    setNewTask({ title: "", acceptanceCriteria: "", priority: "medium" });
+  };
+
+  const assignBacklogTask = async (taskId: string) => {
+    const response = await fetch(`${daemonBaseUrl}/api/tasks/${taskId}/assign-room`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(backlogAssignment)
+    });
+
+    if (!response.ok) {
+      return;
+    }
+
+    const body = (await response.json()) as { task: Task; room: Room; workspace: WorkspaceSeed; needs: DecisionItem[]; brief: DailyBrief; fm: ElfFmFeed };
+    setWorkspace(body.workspace);
+    setDecisionItems(body.needs);
+    setDailyBrief(body.brief);
+    setElfFmFeed(body.fm);
+    setSelectedProductId(body.room.productId);
+    setSelectedRoomId(body.room.id);
+    setIsCreatingRoom(false);
+  };
+
   const saveProductMemorySection = async (productId: string, section: ProductMemorySectionKey, body: string) => {
     const response = await fetch(`${daemonBaseUrl}/api/products/${productId}/memory/${section}`, {
       method: "POST",
@@ -947,6 +1033,18 @@ export function App() {
             setSelectedRoomId(roomId);
             setIsCreatingRoom(false);
           }}
+        />
+
+        <TaskBacklogPanel
+          product={selectedProduct}
+          tasks={selectedBacklogTasks}
+          workspace={workspace}
+          draft={newTask}
+          assignment={backlogAssignment}
+          onDraftChange={setNewTask}
+          onAssignmentChange={setBacklogAssignment}
+          onCreateTask={createBacklogTask}
+          onAssignTask={assignBacklogTask}
         />
 
         <div className="mb-4 flex items-center justify-between rounded-xl border border-stone-800 bg-stone-900/70 p-3">
@@ -1323,6 +1421,117 @@ function ElfFMPanel({
         {transcript.length === 0 ? (
           <p className="rounded-lg border border-white/10 bg-white/[0.06] px-3 py-2 text-sm text-stone-400">No artifact-backed broadcast items for this project yet.</p>
         ) : null}
+      </div>
+    </section>
+  );
+}
+
+function TaskBacklogPanel({
+  product,
+  tasks,
+  workspace,
+  draft,
+  assignment,
+  onDraftChange,
+  onAssignmentChange,
+  onCreateTask,
+  onAssignTask
+}: {
+  product?: Product;
+  tasks: Task[];
+  workspace: WorkspaceSeed;
+  draft: TaskDraft;
+  assignment: BacklogAssignment;
+  onDraftChange: (draft: TaskDraft) => void;
+  onAssignmentChange: (assignment: BacklogAssignment) => void;
+  onCreateTask: () => void;
+  onAssignTask: (taskId: string) => void;
+}) {
+  return (
+    <section className="mb-4 rounded-xl border border-stone-800 bg-stone-900/70 p-3 shadow-sm" aria-label="Task Backlog">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <ClipboardCheck size={17} />
+          <div className="min-w-0">
+            <p className="text-[11px] font-extrabold uppercase text-stone-500">Task Backlog</p>
+            <h3 className="truncate text-base font-bold tracking-normal">{product ? product.name : "Select a product"}</h3>
+          </div>
+        </div>
+        <Badge variant={tasks.length > 0 ? "blue" : "secondary"}>{tasks.length} open</Badge>
+      </div>
+
+      <div className="grid gap-2">
+        <input
+          className="h-9 rounded-md border border-stone-700 bg-stone-950 px-2 text-sm text-stone-100 placeholder:text-stone-500"
+          value={draft.title}
+          onChange={(event) => onDraftChange({ ...draft, title: event.target.value })}
+          placeholder={product ? `Task for ${product.name}` : "Select a product first"}
+          disabled={!product}
+        />
+        <Textarea
+          className="min-h-16"
+          value={draft.acceptanceCriteria}
+          onChange={(event) => onDraftChange({ ...draft, acceptanceCriteria: event.target.value })}
+          placeholder={"Acceptance criteria\nOne per line"}
+          rows={2}
+          disabled={!product}
+        />
+        <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
+          <select
+            className="h-9 rounded-md border border-stone-700 bg-stone-950 px-2 text-sm text-stone-100"
+            value={draft.priority}
+            onChange={(event) => onDraftChange({ ...draft, priority: event.target.value as Task["priority"] })}
+            disabled={!product}
+          >
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+          </select>
+          <select
+            className="h-9 rounded-md border border-stone-700 bg-stone-950 px-2 text-sm text-stone-100"
+            value={assignment.assignedElfId}
+            onChange={(event) => onAssignmentChange({ ...assignment, assignedElfId: event.target.value })}
+          >
+            {workspace.elves.map((elf) => (
+              <option key={elf.id} value={elf.id}>
+                {elf.name}
+              </option>
+            ))}
+          </select>
+          <Button size="sm" type="button" onClick={onCreateTask} disabled={!product || !draft.title.trim()}>
+            Add
+          </Button>
+        </div>
+        <select
+          className="h-9 rounded-md border border-stone-700 bg-stone-950 px-2 text-sm text-stone-100"
+          value={assignment.playbookId}
+          onChange={(event) => onAssignmentChange({ ...assignment, playbookId: event.target.value })}
+        >
+          {workspace.playbooks.map((playbook) => (
+            <option key={playbook.id} value={playbook.id}>
+              {playbook.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="mt-3 grid gap-2">
+        {tasks.slice(0, 4).map((task) => (
+          <article className="grid gap-2 rounded-lg border border-stone-800 bg-stone-950/70 p-2.5" key={task.id}>
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-bold text-stone-100">{task.title}</p>
+                <p className="mt-1 text-xs text-stone-500">{task.acceptanceCriteria.length} criteria · {task.priority}</p>
+              </div>
+              <Button className="h-7 px-2 text-[11px]" size="sm" type="button" onClick={() => onAssignTask(task.id)}>
+                Assign
+              </Button>
+            </div>
+            {task.acceptanceCriteria[0] ? <p className="line-clamp-2 text-xs leading-5 text-stone-400">{task.acceptanceCriteria[0]}</p> : null}
+          </article>
+        ))}
+        {tasks.length === 0 ? <p className="rounded-lg border border-stone-800 bg-stone-950/60 px-3 py-2 text-sm text-stone-500">No unassigned tasks for this product.</p> : null}
+        {tasks.length > 4 ? <p className="text-xs font-semibold text-stone-500">{tasks.length - 4} more backlog tasks hidden in this compact view.</p> : null}
       </div>
     </section>
   );

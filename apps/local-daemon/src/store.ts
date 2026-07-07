@@ -120,6 +120,18 @@ export interface CreateRoomInput {
   playbookId?: string;
 }
 
+export interface CreateTaskInput {
+  productId: string;
+  title: string;
+  acceptanceCriteria: string[];
+  priority?: Task["priority"];
+}
+
+export interface AssignTaskRoomInput {
+  assignedElfId?: string;
+  playbookId?: string;
+}
+
 export interface CreateProductInput {
   name: string;
   localPath: string;
@@ -343,6 +355,17 @@ export class WorkspaceStore {
     };
   }
 
+  createTask(input: CreateTaskInput): Task {
+    const product = this.getProduct(input.productId);
+    const title = input.title.trim();
+    if (!title) {
+      throw new Error("Task title is required");
+    }
+    const task = makeTask(product.id, title, input.acceptanceCriteria, input.priority ?? "medium");
+    this.insertTask(task);
+    return this.getTask(task.id);
+  }
+
   createTaskRoom(input: CreateRoomInput): { task: Task; room: Room } {
     const title = input.title.trim();
     if (!title) {
@@ -350,51 +373,37 @@ export class WorkspaceStore {
     }
 
     const product = this.getProduct(input.productId);
-    const assignedElfId = input.assignedElfId ?? this.defaultBuilderElfId();
-    const playbookId = input.playbookId && this.getPlaybook(input.playbookId) ? input.playbookId : null;
-    const elf = this.db.prepare("SELECT * FROM elves WHERE id = ?").get(assignedElfId) as unknown as Elf | undefined;
-    if (!elf) {
-      throw new Error(`Elf not found: ${assignedElfId}`);
-    }
-
-    const criteria = input.acceptanceCriteria.map((item) => item.trim()).filter(Boolean);
-    if (criteria.length === 0) {
-      criteria.push("Founder reviews the room output before accepting it.");
-    }
-
-    const suffix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
-    const taskId = `task-${suffix}`;
-    const roomId = `room-${suffix}`;
-    const startedAt = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    const task: Task = {
-      id: taskId,
-      productId: product.id,
-      title,
-      acceptanceCriteria: criteria,
-      priority: "medium"
-    };
-
+    const task = makeTask(product.id, title, input.acceptanceCriteria, "medium");
     this.db.exec("BEGIN");
     try {
-      this.db
-        .prepare("INSERT INTO tasks (id, productId, title, acceptanceCriteria, priority) VALUES (?, ?, ?, ?, ?)")
-        .run(task.id, task.productId, task.title, JSON.stringify(task.acceptanceCriteria), task.priority);
-      this.db
-        .prepare(
-          "INSERT INTO rooms (id, product_id, task_id, assigned_elf_id, playbook_id, title, status, started_at, last_activity_at, summary) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-        )
-        .run(roomId, product.id, task.id, assignedElfId, playbookId, title, "idle", startedAt, startedAt, `Room created for ${product.name}. Assign an elf run when ready.`);
-      this.db
-        .prepare("INSERT INTO room_notes (room_id, body, created_at) VALUES (?, ?, ?)")
-        .run(roomId, `Created manually in Elves HQ for ${product.name}.`, new Date().toISOString());
+      this.insertTask(task);
+      const room = this.insertRoomForTask(task, input);
       this.db.exec("COMMIT");
+      this.appendRoomLog(room.id, "info", `Created room for ${product.name}: ${task.title}`);
+      return { task, room: this.getRoom(room.id) };
     } catch (error) {
       this.db.exec("ROLLBACK");
       throw error;
     }
+  }
 
-    this.appendRoomLog(roomId, "info", `Created room for ${product.name}: ${title}`);
-    return { task, room: this.getRoom(roomId) };
+  assignTaskToRoom(taskId: string, input: AssignTaskRoomInput): { task: Task; room: Room } {
+    const task = this.getTask(taskId);
+    const existingRoom = this.db.prepare("SELECT id FROM rooms WHERE task_id = ? LIMIT 1").get(task.id) as { id: string } | undefined;
+    if (existingRoom) {
+      throw new Error("Task is already assigned to a room.");
+    }
+
+    this.db.exec("BEGIN");
+    try {
+      const room = this.insertRoomForTask(task, input);
+      this.db.exec("COMMIT");
+      this.appendRoomLog(room.id, "info", `Assigned backlog task to room: ${task.title}`);
+      return { task, room: this.getRoom(room.id) };
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
   }
 
   createRun(roomId: string, mode: ElfRun["mode"], command: string): ElfRun {
@@ -818,6 +827,36 @@ export class WorkspaceStore {
     this.db.prepare("UPDATE rooms SET status = ?, summary = ?, last_activity_at = ? WHERE id = ?").run(status, summary, "now", roomId);
   }
 
+  private insertTask(task: Task) {
+    this.db
+      .prepare("INSERT INTO tasks (id, productId, title, acceptanceCriteria, priority) VALUES (?, ?, ?, ?, ?)")
+      .run(task.id, task.productId, task.title, JSON.stringify(task.acceptanceCriteria), task.priority);
+  }
+
+  private insertRoomForTask(task: Task, input: AssignTaskRoomInput): Room {
+    const product = this.getProduct(task.productId);
+    const assignedElfId = input.assignedElfId ?? this.defaultBuilderElfId();
+    const playbookId = input.playbookId && this.getPlaybook(input.playbookId) ? input.playbookId : null;
+    const elf = this.db.prepare("SELECT * FROM elves WHERE id = ?").get(assignedElfId) as unknown as Elf | undefined;
+    if (!elf) {
+      throw new Error(`Elf not found: ${assignedElfId}`);
+    }
+
+    const roomId = `room-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+    const startedAt = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+    this.db
+      .prepare(
+        "INSERT INTO rooms (id, product_id, task_id, assigned_elf_id, playbook_id, title, status, started_at, last_activity_at, summary) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      )
+      .run(roomId, product.id, task.id, assignedElfId, playbookId, task.title, "idle", startedAt, startedAt, `Room created for ${product.name}. Assign an elf run when ready.`);
+    this.db
+      .prepare("INSERT INTO room_notes (room_id, body, created_at) VALUES (?, ?, ?)")
+      .run(roomId, `Assigned task in Elves HQ for ${product.name}.`, new Date().toISOString());
+
+    return this.getRoom(roomId);
+  }
+
   private defaultBuilderElfId() {
     const elf = this.db.prepare("SELECT * FROM elves WHERE role = ? ORDER BY name LIMIT 1").get("builder") as unknown as Elf | undefined;
     if (!elf) {
@@ -908,6 +947,21 @@ function hydrateRun(row: RunRow): ElfRun {
     startedAt: row.started_at,
     endedAt: row.ended_at,
     exitCode: row.exit_code
+  };
+}
+
+function makeTask(productId: string, title: string, acceptanceCriteria: string[], priority: Task["priority"]): Task {
+  const criteria = acceptanceCriteria.map((item) => item.trim()).filter(Boolean);
+  if (criteria.length === 0) {
+    criteria.push("Founder reviews the room output before accepting it.");
+  }
+
+  return {
+    id: `task-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+    productId,
+    title,
+    acceptanceCriteria: criteria,
+    priority
   };
 }
 

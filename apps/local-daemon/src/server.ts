@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import type { CheckScriptKey, DecisionAction, ElfRun, Product, ProductMemorySectionKey } from "@elves-hq/core";
+import type { CheckScriptKey, DecisionAction, ElfRun, Product, ProductMemorySectionKey, Task } from "@elves-hq/core";
 import { RoomProcessManager } from "./process-manager";
 import { WorkspaceStore } from "./store";
 
@@ -74,6 +74,21 @@ const server = createServer(async (request, response) => {
       const body = await readJson(request);
       const product = store.createProduct(readCreateProductInput(body));
       sendJson(response, 200, { product, workspace: store.getWorkspace() });
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/tasks") {
+      const body = await readJson(request);
+      const task = store.createTask(readCreateTaskInput(body));
+      sendJson(response, 200, { task, workspace: store.getWorkspace() });
+      return;
+    }
+
+    const assignTaskMatch = url.pathname.match(/^\/api\/tasks\/([^/]+)\/assign-room$/);
+    if (request.method === "POST" && assignTaskMatch) {
+      const body = await readJson(request);
+      const result = store.assignTaskToRoom(assignTaskMatch[1], readAssignTaskRoomInput(body));
+      sendJson(response, 200, { ...result, workspace: store.getWorkspace(), needs: store.getDecisionItems(), brief: store.getDailyBrief(), fm: store.getElfFmFeed() });
       return;
     }
 
@@ -335,6 +350,53 @@ function readCreateRoomInput(body: unknown) {
     assignedElfId: typeof record.assignedElfId === "string" ? record.assignedElfId : undefined,
     playbookId: typeof record.playbookId === "string" ? record.playbookId : undefined
   };
+}
+
+function readCreateTaskInput(body: unknown) {
+  if (!body || typeof body !== "object") {
+    throw new Error("Task body is required");
+  }
+
+  const record = body as { productId?: unknown; title?: unknown; acceptanceCriteria?: unknown; priority?: unknown };
+  if (typeof record.productId !== "string") {
+    throw new Error("productId is required");
+  }
+  if (typeof record.title !== "string") {
+    throw new Error("title is required");
+  }
+
+  return {
+    productId: record.productId,
+    title: record.title,
+    acceptanceCriteria: readAcceptanceCriteria(record.acceptanceCriteria),
+    priority: readOptionalTaskPriority(record.priority)
+  };
+}
+
+function readAssignTaskRoomInput(body: unknown) {
+  if (!body || typeof body !== "object") {
+    return {};
+  }
+
+  const record = body as { assignedElfId?: unknown; playbookId?: unknown };
+  return {
+    assignedElfId: typeof record.assignedElfId === "string" && record.assignedElfId.trim() ? record.assignedElfId : undefined,
+    playbookId: typeof record.playbookId === "string" && record.playbookId.trim() ? record.playbookId : undefined
+  };
+}
+
+function readAcceptanceCriteria(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function readOptionalTaskPriority(value: unknown): Task["priority"] | undefined {
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+  if (value === "high" || value === "medium" || value === "low") {
+    return value;
+  }
+  throw new Error("Unsupported task priority");
 }
 
 function readCreateProductInput(body: unknown) {
