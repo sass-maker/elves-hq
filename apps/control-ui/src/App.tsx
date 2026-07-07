@@ -1803,40 +1803,43 @@ function RoomDeck({
         </div>
       </div>
 
-      <div className="grid gap-2 rounded-xl border border-stone-800 bg-stone-950/60 p-2">
-        <div className="flex flex-wrap gap-1.5" aria-label="Room signal filter">
-          {roomSignalFilters.map((filter) => (
-            <button
-              className={cn(
-                "h-7 rounded-md border px-2 text-[11px] font-bold transition-colors",
-                signalFilter === filter.id
-                  ? "border-emerald-500/60 bg-stone-900 text-stone-100"
-                  : "border-stone-800 bg-stone-950 text-stone-400 hover:border-stone-700 hover:text-stone-100"
-              )}
-              type="button"
-              key={filter.id}
-              aria-pressed={signalFilter === filter.id}
-              onClick={() => onSignalFilterChange(filter.id)}
-            >
-              {filter.label} {signalCounts[filter.id]}
-            </button>
-          ))}
-        </div>
-        <label className="flex items-center justify-between gap-3 text-[11px] font-extrabold uppercase text-stone-500">
-          Sort
-          <select
-            className="h-8 min-w-40 rounded-md border border-stone-800 bg-stone-950 px-2 text-xs font-bold normal-case text-stone-200 outline-none focus:border-emerald-400"
-            value={sortOrder}
-            onChange={(event) => onSortOrderChange(event.target.value as RoomSortOrder)}
-          >
-            {Object.entries(roomSortLabels).map(([value, label]) => (
-              <option value={value} key={value}>
-                {label}
-              </option>
+      <details className="rounded-xl border border-stone-800 bg-stone-950/60 p-2">
+        <summary className="cursor-pointer list-none text-[11px] font-extrabold uppercase text-stone-500">View options</summary>
+        <div className="mt-2 grid gap-2">
+          <div className="flex flex-wrap gap-1.5" aria-label="Room signal filter">
+            {roomSignalFilters.map((filter) => (
+              <button
+                className={cn(
+                  "h-7 rounded-md border px-2 text-[11px] font-bold transition-colors",
+                  signalFilter === filter.id
+                    ? "border-emerald-500/60 bg-stone-900 text-stone-100"
+                    : "border-stone-800 bg-stone-950 text-stone-400 hover:border-stone-700 hover:text-stone-100"
+                )}
+                type="button"
+                key={filter.id}
+                aria-pressed={signalFilter === filter.id}
+                onClick={() => onSignalFilterChange(filter.id)}
+              >
+                {filter.label} {signalCounts[filter.id]}
+              </button>
             ))}
-          </select>
-        </label>
-      </div>
+          </div>
+          <label className="flex items-center justify-between gap-3 text-[11px] font-extrabold uppercase text-stone-500">
+            Sort
+            <select
+              className="h-8 min-w-40 rounded-md border border-stone-800 bg-stone-950 px-2 text-xs font-bold normal-case text-stone-200 outline-none focus:border-emerald-400"
+              value={sortOrder}
+              onChange={(event) => onSortOrderChange(event.target.value as RoomSortOrder)}
+            >
+              {Object.entries(roomSortLabels).map(([value, label]) => (
+                <option value={value} key={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      </details>
 
       {rooms.length > 0 ? (
         <div className="overflow-hidden rounded-xl border border-stone-800 bg-stone-950/60 p-2">
@@ -2662,7 +2665,9 @@ function ProductFolderCard({
       </div>
       <p className="break-words rounded-md bg-stone-950 px-2 py-1.5 text-[11px] leading-4 text-stone-400">{inspection?.resolvedPath ?? product.localPath}</p>
       {inspection ? (
-        <div className="mt-2 grid gap-2">
+        <details className="mt-2 rounded-md border border-stone-800 bg-stone-950/50 p-2">
+          <summary className="cursor-pointer list-none text-[11px] font-extrabold uppercase text-stone-500">Folder details</summary>
+          <div className="mt-2 grid gap-2">
           <div className="grid grid-cols-3 gap-1.5">
             <FolderSignal label="Path" ok={inspection.exists && inspection.isDirectory} />
             <FolderSignal label="Git" ok={inspection.isGitRepo} />
@@ -2680,10 +2685,13 @@ function ProductFolderCard({
           {inspection.warnings.length > 0 ? (
             <p className="text-xs leading-5 text-amber-300">{inspection.warnings[0]}</p>
           ) : null}
-        </div>
+          </div>
+        </details>
       ) : null}
       {onSaveSettings ? (
-        <div className="mt-3 grid gap-2 border-t border-stone-800 pt-3">
+        <details className="mt-2 rounded-md border border-stone-800 bg-stone-950/50 p-2">
+          <summary className="cursor-pointer list-none text-[11px] font-extrabold uppercase text-stone-500">Product settings</summary>
+        <div className="mt-2 grid gap-2">
           <div className="grid grid-cols-2 gap-2">
             <label className="grid gap-1 text-[11px] font-bold uppercase text-stone-500">
               Status
@@ -2731,6 +2739,7 @@ function ProductFolderCard({
             </div>
           </div>
         </div>
+        </details>
       ) : null}
     </section>
   );
