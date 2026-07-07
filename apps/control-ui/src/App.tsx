@@ -676,6 +676,7 @@ export function App() {
 
         if (!cancelled) {
           setTerminalRunLogs((current) => ({ ...current, ...Object.fromEntries(logEntries) }));
+          void refreshWorkspaceSnapshot().catch(() => setSyncState("stale"));
         }
       } catch {
         setSyncState("stale");

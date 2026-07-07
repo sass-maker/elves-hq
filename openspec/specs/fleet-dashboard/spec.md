@@ -126,6 +126,7 @@ Elves HQ MUST let the founder start or stop a room run directly from the command
 - **THEN** the pane offers compact controls for read-only Codex, worktree Codex, and dry-run modes
 - **AND** selecting one starts the corresponding existing room run mode
 - **AND** captured output continues to appear in that terminal pane through the existing run-log polling
+- **AND** polling refreshes room and decision state so terminal color/status changes when the run finishes or fails
 
 #### Scenario: Terminal run start fails
 
