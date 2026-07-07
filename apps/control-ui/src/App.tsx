@@ -2932,6 +2932,7 @@ function RoomDetail({
       : productInspection && !productInspection.isGitRepo
         ? "Product folder is not a git repository."
         : undefined;
+  const gateSummary = summarizeGateChecklist(gateChecklist);
   const roomCommands: Array<{ id: RoomCommand; label: string; group: string; disabled?: boolean }> = [
     { id: "build", label: "Build in worktree", group: "Run", disabled: Boolean(worktreeBlocker) },
     { id: "draft", label: "Draft in worktree", group: "Run", disabled: Boolean(worktreeBlocker) },
@@ -3067,23 +3068,12 @@ function RoomDetail({
           </ul>
         </div>
         <div>
-          <SectionTitle icon={<PanelRightOpen size={16} />} title="Actions" />
-          <GateChecklist items={gateChecklist} />
+          <SectionTitle icon={<PanelRightOpen size={16} />} title="Command" />
           {readOnlyBlocker || worktreeBlocker ? (
             <div className="mb-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-xs leading-5 text-amber-200">
               {worktreeBlocker ?? readOnlyBlocker}
             </div>
           ) : null}
-          <label className="mb-3 grid gap-1 text-xs font-extrabold uppercase text-stone-500">
-            Next run instructions
-            <Textarea
-              className="min-h-20 text-sm normal-case"
-              value={runInstructionDraft}
-              onChange={(event) => onRunInstructionDraftChange(event.target.value)}
-              placeholder="Focus on one failing check. Do not touch unrelated files."
-              rows={3}
-            />
-          </label>
           <div className="grid grid-cols-[1fr_auto] gap-2">
             <label className="grid gap-1 text-xs font-extrabold uppercase text-stone-500">
               Command
@@ -3138,6 +3128,28 @@ function RoomDetail({
               This command is not available for the latest room state.
             </p>
           ) : null}
+          <details className="mt-3 rounded-lg border border-stone-800 bg-stone-950/45 p-2">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-xs font-extrabold uppercase text-stone-500">
+              <span>Run instructions</span>
+              {runInstructionDraft.trim() ? <Badge variant="blue">Custom</Badge> : null}
+            </summary>
+            <Textarea
+              className="mt-2 min-h-20 text-sm normal-case"
+              value={runInstructionDraft}
+              onChange={(event) => onRunInstructionDraftChange(event.target.value)}
+              placeholder="Focus on one failing check. Do not touch unrelated files."
+              rows={3}
+            />
+          </details>
+          <details className="mt-2 rounded-lg border border-stone-800 bg-stone-950/45 p-2">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-xs font-extrabold uppercase text-stone-500">
+              <span>Approval gates</span>
+              <span className="normal-case text-stone-400">{gateSummary}</span>
+            </summary>
+            <div className="mt-2">
+              <GateChecklist items={gateChecklist} />
+            </div>
+          </details>
           {decisionPreview ? (
             <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm leading-5 text-amber-100">
               {decisionPreview}
@@ -3680,9 +3692,30 @@ function buildGateChecklistItem({
   return { id, label, state: "missing", summary: missingSummary };
 }
 
+function summarizeGateChecklist(items: GateChecklistItem[]) {
+  const failed = items.filter((item) => item.state === "failed").length;
+  const missing = items.filter((item) => item.state === "missing").length;
+  const waiting = items.filter((item) => item.state === "waiting").length;
+  const passed = items.filter((item) => item.state === "passed").length;
+
+  if (failed > 0) {
+    return `${failed} failed`;
+  }
+
+  if (missing > 0) {
+    return `${missing} required`;
+  }
+
+  if (waiting === items.length) {
+    return "Waiting for diff";
+  }
+
+  return `${passed}/${items.length} passed`;
+}
+
 function GateChecklist({ items }: { items: GateChecklistItem[] }) {
   return (
-    <div className="mb-3 grid gap-2 rounded-lg border border-stone-800 bg-stone-950/60 p-2.5" aria-label="Gate checklist">
+    <div className="grid gap-2 rounded-lg border border-stone-800 bg-stone-950/60 p-2.5" aria-label="Gate checklist">
       {items.map((item) => (
         <div className="flex min-w-0 items-start gap-2" key={item.id}>
           <span className={cn(
