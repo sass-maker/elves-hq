@@ -125,6 +125,15 @@ type RoomOutputPreview = {
   body?: string;
 };
 
+type ProductPulseRow = {
+  product: Product;
+  signal: RoomStatus;
+  summary: string;
+  roomCount: number;
+  activeCount: number;
+  needsCount: number;
+};
+
 type TaskDraft = {
   title: string;
   acceptanceCriteria: string;
@@ -398,6 +407,7 @@ export function App() {
   );
   const selectedClosedTaskCount = selectedProductTasks.length - selectedBacklogTasks.length;
   const selectedProductMemory = selectedRoom ? productMemoryById[selectedRoom.productId] : undefined;
+  const productPulseRows = useMemo(() => buildProductPulseRows(workspace), [workspace]);
   const selectedMemoryDraftKey = selectedRoom ? `${selectedRoom.productId}:${selectedMemorySection}` : "";
   const selectedMemorySectionBody =
     selectedMemoryDraftKey && selectedMemoryDraftKey in memoryDrafts
@@ -1190,6 +1200,15 @@ export function App() {
             onRemove={() => removeProduct(selectedProduct)}
           />
         ) : null}
+
+        <FleetPulsePanel
+          rows={productPulseRows}
+          selectedProductId={selectedProductId}
+          onSelectProduct={(productId) => {
+            setSelectedProductId(productId);
+            setIsCreatingRoom(false);
+          }}
+        />
 
         <div className="mt-2 grid gap-2">
           {workspace.products.map((product) => {
@@ -2081,6 +2100,73 @@ function DailyBriefPanel({
             <code>{markdownPreview}</code>
           </pre>
         ) : null}
+      </div>
+    </section>
+  );
+}
+
+function buildProductPulseRows(workspace: WorkspaceSeed): ProductPulseRow[] {
+  return workspace.products.map((product) => {
+    const rooms = workspace.rooms.filter((room) => room.productId === product.id);
+    const activeRooms = rooms.filter((room) => room.status !== "done");
+    const needsRooms = rooms.filter((room) => room.status === "asking" || room.status === "ready" || room.status === "blocked" || room.status === "failed");
+    const signalRoom = statusOrder.map((status) => rooms.find((room) => room.status === status)).find((room): room is Room => Boolean(room));
+    const signal = signalRoom?.status ?? "idle";
+
+    return {
+      product,
+      signal,
+      summary: signalRoom?.summary ?? product.currentGoal,
+      roomCount: rooms.length,
+      activeCount: activeRooms.length,
+      needsCount: needsRooms.length
+    };
+  });
+}
+
+function FleetPulsePanel({
+  rows,
+  selectedProductId,
+  onSelectProduct
+}: {
+  rows: ProductPulseRow[];
+  selectedProductId: string;
+  onSelectProduct: (productId: string) => void;
+}) {
+  return (
+    <section className="mt-3 rounded-xl border border-stone-800 bg-stone-900/70 p-3" aria-label="Fleet Pulse">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div>
+          <p className="text-[11px] font-extrabold uppercase text-stone-500">Fleet Pulse</p>
+          <h2 className="text-sm font-bold text-stone-100">Product signals</h2>
+        </div>
+        <Badge variant="secondary">{rows.length}</Badge>
+      </div>
+      <div className="grid gap-2">
+        {rows.map((row) => (
+          <button
+            className={cn(
+              "grid gap-1 rounded-lg border bg-stone-950/60 p-2 text-left transition-colors hover:border-emerald-400/60",
+              selectedProductId === row.product.id ? "border-emerald-400/70" : "border-stone-800"
+            )}
+            type="button"
+            key={row.product.id}
+            onClick={() => onSelectProduct(row.product.id)}
+          >
+            <span className={cn("h-1.5 rounded-full", statusDot[row.signal])} />
+            <span className="flex min-w-0 items-center gap-2">
+              <span className="truncate text-xs font-extrabold text-stone-100">{row.product.name}</span>
+              <Badge className="ml-auto" variant={statusTone[row.signal]}>{statusLabels[row.signal]}</Badge>
+            </span>
+            <span className="line-clamp-2 text-[11px] leading-4 text-stone-400">{row.summary}</span>
+            <span className="flex items-center gap-2 text-[10px] font-bold uppercase text-stone-500">
+              <span>{row.product.priority}</span>
+              <span>{row.activeCount} active</span>
+              <span>{row.needsCount} need</span>
+              <span>{row.roomCount} rooms</span>
+            </span>
+          </button>
+        ))}
       </div>
     </section>
   );
