@@ -1420,13 +1420,15 @@ export function App() {
         elfFmFeed={elfFmFeed}
         roomRuns={roomRuns}
         terminalRunLogs={terminalRunLogs}
+        terminalInstructions={runInstructionsByRoomId}
         daemonState={daemonState}
         syncState={syncState}
         lastSyncAt={lastSyncAt}
         onSelectProduct={setSelectedProductId}
         onOpenRoom={openRoomFromCommandCenter}
         onOpenRoomView={() => setActiveShellView("room")}
-        onStartRoomRun={(roomId, mode) => startRoomRun(roomId, mode)}
+        onTerminalInstructionChange={(roomId, value) => setRunInstructionsByRoomId((current) => ({ ...current, [roomId]: value }))}
+        onStartRoomRun={(roomId, mode, prompt) => startRoomRun(roomId, mode, prompt)}
         onKillRoomRun={killLatestRun}
       />
     );
@@ -1826,12 +1828,14 @@ function TerminalCommandCenter({
   elfFmFeed,
   roomRuns,
   terminalRunLogs,
+  terminalInstructions,
   daemonState,
   syncState,
   lastSyncAt,
   onSelectProduct,
   onOpenRoom,
   onOpenRoomView,
+  onTerminalInstructionChange,
   onStartRoomRun,
   onKillRoomRun
 }: {
@@ -1844,13 +1848,15 @@ function TerminalCommandCenter({
   elfFmFeed: ElfFmFeed;
   roomRuns: Record<string, ElfRun[]>;
   terminalRunLogs: Record<string, string>;
+  terminalInstructions: Record<string, string>;
   daemonState: "connecting" | "local" | "fallback";
   syncState: "connecting" | "live" | "stale";
   lastSyncAt: string;
   onSelectProduct: (productId: string) => void;
   onOpenRoom: (room: Room) => void;
   onOpenRoomView: () => void;
-  onStartRoomRun: (roomId: string, mode: ElfRun["mode"]) => void;
+  onTerminalInstructionChange: (roomId: string, value: string) => void;
+  onStartRoomRun: (roomId: string, mode: ElfRun["mode"], prompt?: string) => void;
   onKillRoomRun: (roomId: string) => void;
 }) {
   const { primaryRoom, secondaryRooms, interventionRoom, interventionItem } = commandCenterRooms;
@@ -1992,11 +1998,13 @@ function TerminalCommandCenter({
                   workspace={workspace}
                   runs={roomRuns[primaryRoom.id] ?? []}
                   runLog={terminalRunLogs[primaryRoom.id] ?? ""}
+                  instructionDraft={terminalInstructions[primaryRoom.id] ?? ""}
                   selected={primaryRoom.id === selectedRoomId}
                   span="large"
                   canRunCommands={daemonState === "local"}
                   onOpen={() => onOpenRoom(primaryRoom)}
-                  onStartMode={(mode) => onStartRoomRun(primaryRoom.id, mode)}
+                  onInstructionChange={(value) => onTerminalInstructionChange(primaryRoom.id, value)}
+                  onStartMode={(mode, prompt) => onStartRoomRun(primaryRoom.id, mode, prompt)}
                   onKillRun={() => onKillRoomRun(primaryRoom.id)}
                 />
               ) : (
@@ -2009,10 +2017,12 @@ function TerminalCommandCenter({
                   workspace={workspace}
                   runs={roomRuns[room.id] ?? []}
                   runLog={terminalRunLogs[room.id] ?? ""}
+                  instructionDraft={terminalInstructions[room.id] ?? ""}
                   selected={room.id === selectedRoomId}
                   canRunCommands={daemonState === "local"}
                   onOpen={() => onOpenRoom(room)}
-                  onStartMode={(mode) => onStartRoomRun(room.id, mode)}
+                  onInstructionChange={(value) => onTerminalInstructionChange(room.id, value)}
+                  onStartMode={(mode, prompt) => onStartRoomRun(room.id, mode, prompt)}
                   onKillRun={() => onKillRoomRun(room.id)}
                 />
               ))}
@@ -2027,12 +2037,14 @@ function TerminalCommandCenter({
                 workspace={workspace}
                 runs={roomRuns[interventionRoom.id] ?? []}
                 runLog={terminalRunLogs[interventionRoom.id] ?? ""}
+                instructionDraft={terminalInstructions[interventionRoom.id] ?? ""}
                 decisionItem={interventionItem}
                 selected={interventionRoom.id === selectedRoomId}
                 variant="alert"
                 canRunCommands={daemonState === "local"}
                 onOpen={() => onOpenRoom(interventionRoom)}
-                onStartMode={(mode) => onStartRoomRun(interventionRoom.id, mode)}
+                onInstructionChange={(value) => onTerminalInstructionChange(interventionRoom.id, value)}
+                onStartMode={(mode, prompt) => onStartRoomRun(interventionRoom.id, mode, prompt)}
                 onKillRun={() => onKillRoomRun(interventionRoom.id)}
               />
             ) : (
@@ -2050,12 +2062,14 @@ function TerminalPanel({
   workspace,
   runs,
   runLog,
+  instructionDraft,
   decisionItem,
   selected,
   variant = "default",
   span,
   canRunCommands,
   onOpen,
+  onInstructionChange,
   onStartMode,
   onKillRun
 }: {
@@ -2063,13 +2077,15 @@ function TerminalPanel({
   workspace: WorkspaceSeed;
   runs: ElfRun[];
   runLog: string;
+  instructionDraft: string;
   decisionItem?: DecisionItem;
   selected: boolean;
   variant?: "default" | "alert";
   span?: "large";
   canRunCommands: boolean;
   onOpen: () => void;
-  onStartMode: (mode: ElfRun["mode"]) => void;
+  onInstructionChange: (value: string) => void;
+  onStartMode: (mode: ElfRun["mode"], prompt?: string) => void;
   onKillRun: () => void;
 }) {
   const product = roomProduct(workspace, room);
@@ -2117,25 +2133,41 @@ function TerminalPanel({
         ))}
         <span className={cn("mt-1 inline-block h-4 w-2 align-middle terminal-cursor", terminalToneClasses[tone].cursor)} />
       </button>
-      <footer className={cn("absolute inset-x-4 bottom-4 flex items-center justify-between gap-3 rounded-full border bg-[#020408]/92 py-1.5 pl-3 pr-2 shadow-xl shadow-black/40 backdrop-blur", terminalToneClasses[tone].footer)}>
-        <span className="flex items-center gap-2">
-          <span className={cn("size-1.5 rounded-full", terminalToneClasses[tone].dot)} />
-          <span className={cn("font-mono text-[10px] uppercase tracking-[0.12em]", terminalToneClasses[tone].title)}>
-            {elf.name} {statusLabels[room.status]}
+      <footer className={cn("grid gap-2 border-t bg-[#020408]/96 px-4 py-3", terminalToneClasses[tone].footer)}>
+        <div className="flex min-w-0 items-center justify-between gap-3">
+          <span className="flex min-w-0 items-center gap-2">
+            <span className={cn("size-1.5 shrink-0 rounded-full", terminalToneClasses[tone].dot)} />
+            <span className={cn("truncate font-mono text-[10px] uppercase tracking-[0.12em]", terminalToneClasses[tone].title)}>
+              {elf.name} {statusLabels[room.status]}
+            </span>
           </span>
-        </span>
-        <span className="flex items-center gap-1.5">
+          <span className="grid size-6 shrink-0 place-items-center rounded-full border border-slate-700 bg-slate-950 text-[10px] text-slate-400">{elf.name.slice(0, 1)}</span>
+        </div>
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+          <label className="flex min-w-0 items-center gap-2 rounded-full border border-slate-800 bg-slate-950/80 px-3 py-1.5 font-mono text-[12px] text-slate-300">
+            <span className={terminalToneClasses[tone].title}>$</span>
+            <input
+              className="min-w-0 flex-1 bg-transparent text-slate-200 outline-none placeholder:text-slate-600 disabled:text-slate-600"
+              value={instructionDraft}
+              disabled={!canRunCommands}
+              aria-label={`Instruction for ${room.title}`}
+              placeholder={activeRun ? "instruction for next run" : "tell this elf what to do"}
+              onChange={(event) => onInstructionChange(event.target.value)}
+              onClick={(event) => event.stopPropagation()}
+            />
+          </label>
+          <span className="flex items-center gap-1.5">
           {activeRun ? (
             <TerminalCommandButton label="stop" tone={tone} disabled={!canRunCommands} onClick={onKillRun} />
           ) : (
             <>
-              <TerminalCommandButton label="read" tone={tone} disabled={commandDisabled} onClick={() => onStartMode("codex-readonly")} />
-              <TerminalCommandButton label="build" tone={tone} disabled={commandDisabled} onClick={() => onStartMode("codex-worktree")} />
-              <TerminalCommandButton label="dry" tone={tone} disabled={commandDisabled} onClick={() => onStartMode("dry-run")} />
+              <TerminalCommandButton label="read" tone={tone} disabled={commandDisabled} onClick={() => onStartMode("codex-readonly", instructionDraft)} />
+              <TerminalCommandButton label="build" tone={tone} disabled={commandDisabled} onClick={() => onStartMode("codex-worktree", instructionDraft)} />
+              <TerminalCommandButton label="dry" tone={tone} disabled={commandDisabled} onClick={() => onStartMode("dry-run", instructionDraft)} />
             </>
           )}
-          <span className="ml-1 grid size-6 place-items-center rounded-full border border-slate-700 bg-slate-950 text-[10px] text-slate-400">{elf.name.slice(0, 1)}</span>
-        </span>
+          </span>
+        </div>
       </footer>
       <div className="absolute bottom-1 right-1 text-slate-700 opacity-40 transition-opacity group-hover:opacity-90">
         <GripVertical size={14} className="-rotate-45" />
