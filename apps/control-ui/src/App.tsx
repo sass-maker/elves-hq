@@ -61,7 +61,6 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card";
 import { Separator } from "./components/ui/separator";
 import { Textarea } from "./components/ui/textarea";
 import { cn } from "./lib/utils";
@@ -2776,45 +2775,30 @@ function RoomCard({ room, workspace, selected, onSelect }: { room: Room; workspa
   const elf = roomElf(workspace, room);
   const openAsks = room.asks.length;
   const readyArtifacts = room.artifacts.filter((artifact) => artifact.status === "ready" || artifact.status === "passed").length;
+  const signalCount = openAsks + readyArtifacts;
 
   return (
-    <button type="button" className="text-left" onClick={onSelect}>
-      <Card className={cn("min-h-[156px] transition-all hover:border-stone-600", selected && "border-emerald-500/70")}>
-        <CardHeader className="pb-2">
-          <div className="flex items-center gap-2 text-xs font-extrabold text-stone-500">
-            <span className={cn("h-2.5 w-2.5 rounded-full", statusDot[room.status])} />
-            <span>{statusLabels[room.status]}</span>
-            <span className="ml-auto">{room.lastActivityAt}</span>
-          </div>
-          <CardTitle className="line-clamp-1 text-base leading-tight">{room.title}</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-3">
-          <p className="line-clamp-2 text-sm leading-5 text-stone-400">{room.summary}</p>
-          <div className="flex flex-wrap gap-2">
-            <Badge variant="secondary">{product.name}</Badge>
-            <Badge variant="outline">{elf.name}</Badge>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Signal icon={<HelpCircle size={14} />} label={`${openAsks} asks`} active={openAsks > 0} />
-            <Signal icon={<FileText size={14} />} label={`${readyArtifacts}/${room.artifacts.length} artifacts`} active={readyArtifacts > 0} />
-          </div>
-        </CardContent>
-      </Card>
-    </button>
-  );
-}
-
-function Signal({ icon, label, active }: { icon: React.ReactNode; label: string; active: boolean }) {
-  return (
-    <span
+    <button
+      type="button"
       className={cn(
-        "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold",
-        active ? "bg-amber-500/10 text-amber-200 ring-1 ring-amber-500/30" : "bg-stone-900 text-stone-400"
+        "grid min-h-20 gap-1 rounded-lg border px-3 py-2.5 text-left transition-colors hover:border-stone-700 hover:bg-stone-900/70",
+        selected ? "border-emerald-500/45 bg-stone-900/85" : "border-stone-800 bg-stone-950/55"
       )}
+      onClick={onSelect}
     >
-      {icon}
-      {label}
-    </span>
+      <span className="flex min-w-0 items-center gap-2 text-xs font-bold text-stone-500">
+        <span className={cn("size-2 shrink-0 rounded-full", statusDot[room.status])} />
+        <span className="truncate uppercase">{statusLabels[room.status]}</span>
+        <span className="ml-auto shrink-0">{room.lastActivityAt}</span>
+      </span>
+      <span className="line-clamp-1 text-sm font-extrabold leading-5 text-stone-100">{room.title}</span>
+      <span className="flex min-w-0 items-center gap-2 text-[11px] font-semibold text-stone-500">
+        <span className="truncate">{product.name}</span>
+        <span className="text-stone-700">/</span>
+        <span className="truncate">{elf.name}</span>
+        {signalCount > 0 ? <Badge className="ml-auto shrink-0" variant={openAsks > 0 ? "amber" : "blue"}>{signalCount}</Badge> : null}
+      </span>
+    </button>
   );
 }
 

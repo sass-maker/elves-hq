@@ -11,7 +11,7 @@ Elves HQ MUST show product-first status rows derived from existing room signals.
 
 - **WHEN** the local workspace has registered products
 - **THEN** the cockpit shows a Fleet Pulse row for each product
-- **AND** each row includes the product name, priority, dominant room signal, room counts, and a concise summary
+- **AND** each row includes the product name, dominant room signal, status label, and needs count when founder attention is required
 - **AND** the signal is derived from stored room state rather than a fake progress value
 
 #### Scenario: Founder selects a pulse row
@@ -54,3 +54,9 @@ Elves HQ MUST let the founder organize visible task rooms without leaving the pr
 
 - **WHEN** filtered rooms span multiple pages
 - **THEN** the existing slideable room deck pagination continues to page through the organized room set
+
+#### Scenario: Founder scans the room deck
+
+- **WHEN** the founder views organized rooms
+- **THEN** each room row emphasizes room title, status, product, elf, last activity, and high-signal ask/artifact count
+- **AND** detailed summaries, logs, artifacts, and gate evidence remain in the selected room detail rather than crowding the deck
