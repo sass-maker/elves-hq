@@ -1064,6 +1064,11 @@ export function App() {
     setSelectedProductId(body.room.productId);
     if (note?.trim()) {
       setRoomNotes((current) => ({ ...current, [roomId]: "" }));
+      setRunInstructionsByRoomId((current) => {
+        const next = { ...current };
+        delete next[roomId];
+        return next;
+      });
     }
   };
 
@@ -1430,6 +1435,7 @@ export function App() {
         onTerminalInstructionChange={(roomId, value) => setRunInstructionsByRoomId((current) => ({ ...current, [roomId]: value }))}
         onStartRoomRun={(roomId, mode, prompt) => startRoomRun(roomId, mode, prompt)}
         onKillRoomRun={killLatestRun}
+        onAnswerAsk={(roomId, askId, answer, note) => answerRoomAsk(roomId, askId, answer, note)}
       />
     );
   }
@@ -1837,7 +1843,8 @@ function TerminalCommandCenter({
   onOpenRoomView,
   onTerminalInstructionChange,
   onStartRoomRun,
-  onKillRoomRun
+  onKillRoomRun,
+  onAnswerAsk
 }: {
   workspace: WorkspaceSeed;
   commandCenterRooms: CommandCenterRoomSet;
@@ -1858,6 +1865,7 @@ function TerminalCommandCenter({
   onTerminalInstructionChange: (roomId: string, value: string) => void;
   onStartRoomRun: (roomId: string, mode: ElfRun["mode"], prompt?: string) => void;
   onKillRoomRun: (roomId: string) => void;
+  onAnswerAsk: (roomId: string, askId: string, answer: string, note?: string) => void;
 }) {
   const { primaryRoom, secondaryRooms, interventionRoom, interventionItem } = commandCenterRooms;
   const activeCount = workspace.rooms.filter((room) => room.status === "working").length;
@@ -2006,6 +2014,7 @@ function TerminalCommandCenter({
                   onInstructionChange={(value) => onTerminalInstructionChange(primaryRoom.id, value)}
                   onStartMode={(mode, prompt) => onStartRoomRun(primaryRoom.id, mode, prompt)}
                   onKillRun={() => onKillRoomRun(primaryRoom.id)}
+                  onAnswerAsk={(askId, answer, note) => onAnswerAsk(primaryRoom.id, askId, answer, note)}
                 />
               ) : (
                 <TerminalEmptyPanel title="No active terminals" body="Add a local project and create a task terminal from the inspector." />
@@ -2024,6 +2033,7 @@ function TerminalCommandCenter({
                   onInstructionChange={(value) => onTerminalInstructionChange(room.id, value)}
                   onStartMode={(mode, prompt) => onStartRoomRun(room.id, mode, prompt)}
                   onKillRun={() => onKillRoomRun(room.id)}
+                  onAnswerAsk={(askId, answer, note) => onAnswerAsk(room.id, askId, answer, note)}
                 />
               ))}
               {secondaryRooms.length === 0 ? (
@@ -2046,6 +2056,7 @@ function TerminalCommandCenter({
                 onInstructionChange={(value) => onTerminalInstructionChange(interventionRoom.id, value)}
                 onStartMode={(mode, prompt) => onStartRoomRun(interventionRoom.id, mode, prompt)}
                 onKillRun={() => onKillRoomRun(interventionRoom.id)}
+                onAnswerAsk={(askId, answer, note) => onAnswerAsk(interventionRoom.id, askId, answer, note)}
               />
             ) : (
               <TerminalEmptyPanel title="No intervention" body={elfFmFeed.globalStation.nowPlaying || "Elves are quiet. No founder decision is open."} variant="alert" />
@@ -2071,7 +2082,8 @@ function TerminalPanel({
   onOpen,
   onInstructionChange,
   onStartMode,
-  onKillRun
+  onKillRun,
+  onAnswerAsk
 }: {
   room: Room;
   workspace: WorkspaceSeed;
@@ -2087,13 +2099,15 @@ function TerminalPanel({
   onInstructionChange: (value: string) => void;
   onStartMode: (mode: ElfRun["mode"], prompt?: string) => void;
   onKillRun: () => void;
+  onAnswerAsk: (askId: string, answer: string, note?: string) => void;
 }) {
   const product = roomProduct(workspace, room);
   const elf = roomElf(workspace, room);
   const tone = terminalToneForRoom(room, variant);
   const lines = buildTerminalLines(room, product, elf, runs, runLog, decisionItem);
   const activeRun = runs.find((run) => run.status === "running");
-  const commandDisabled = !canRunCommands || Boolean(activeRun);
+  const openAsk = room.asks[0];
+  const commandDisabled = !canRunCommands || Boolean(activeRun) || Boolean(openAsk);
 
   return (
     <article
@@ -2157,15 +2171,25 @@ function TerminalPanel({
             />
           </label>
           <span className="flex items-center gap-1.5">
-          {activeRun ? (
-            <TerminalCommandButton label="stop" tone={tone} disabled={!canRunCommands} onClick={onKillRun} />
-          ) : (
-            <>
-              <TerminalCommandButton label="read" tone={tone} disabled={commandDisabled} onClick={() => onStartMode("codex-readonly", instructionDraft)} />
-              <TerminalCommandButton label="build" tone={tone} disabled={commandDisabled} onClick={() => onStartMode("codex-worktree", instructionDraft)} />
-              <TerminalCommandButton label="dry" tone={tone} disabled={commandDisabled} onClick={() => onStartMode("dry-run", instructionDraft)} />
-            </>
-          )}
+            {openAsk ? (
+              openAsk.options.slice(0, 3).map((option) => (
+                <TerminalCommandButton
+                  key={option}
+                  label={option}
+                  tone={tone}
+                  disabled={!canRunCommands}
+                  onClick={() => onAnswerAsk(openAsk.id, option, instructionDraft)}
+                />
+              ))
+            ) : activeRun ? (
+              <TerminalCommandButton label="stop" tone={tone} disabled={!canRunCommands} onClick={onKillRun} />
+            ) : (
+              <>
+                <TerminalCommandButton label="read" tone={tone} disabled={commandDisabled} onClick={() => onStartMode("codex-readonly", instructionDraft)} />
+                <TerminalCommandButton label="build" tone={tone} disabled={commandDisabled} onClick={() => onStartMode("codex-worktree", instructionDraft)} />
+                <TerminalCommandButton label="dry" tone={tone} disabled={commandDisabled} onClick={() => onStartMode("dry-run", instructionDraft)} />
+              </>
+            )}
           </span>
         </div>
       </footer>
@@ -2207,7 +2231,7 @@ function TerminalCommandButton({
   return (
     <button
       className={cn(
-        "h-6 rounded-full border px-2 font-mono text-[10px] uppercase tracking-[0.12em] transition-colors disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-700",
+        "h-6 max-w-32 truncate rounded-full border px-2 font-mono text-[10px] uppercase tracking-[0.12em] transition-colors disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-700",
         tone === "alert" || tone === "red"
           ? "border-red-300/25 text-red-100/80 hover:border-red-300/50 hover:text-red-100"
           : tone === "amber"
@@ -2312,9 +2336,19 @@ function terminalToneForRoom(room: Room, variant: "default" | "alert"): Terminal
 function buildTerminalLines(room: Room, product: Product, elf: ReturnType<typeof roomElf>, runs: ElfRun[], runLog: string, decisionItem?: DecisionItem): string[] {
   const latestRun = runs.find((run) => run.status === "running") ?? runs[0];
   const runLogLines = runLog.trim() ? tailTerminalLog(runLog, 24) : [];
+  const openAsk = room.asks[0];
+  const askLines = openAsk
+    ? [
+        `[ASK] ${openAsk.question}`,
+        ...(openAsk.recommendation ? [`[REC] ${openAsk.recommendation}`] : []),
+        `[OPT] ${openAsk.options.slice(0, 3).join(" / ")}`
+      ]
+    : [];
 
   if (latestRun && runLogLines.length > 0) {
     return [
+      ...askLines,
+      ...(askLines.length > 0 ? [""] : []),
       `$ ${latestRun.command}`,
       `# ${latestRun.mode} // ${runTimingLabel(latestRun)}`,
       ...(latestRun.workspacePath ? [`# cwd ${latestRun.workspacePath}`] : []),
@@ -2323,7 +2357,6 @@ function buildTerminalLines(room: Room, product: Product, elf: ReturnType<typeof
     ].map(trimTerminalLine);
   }
 
-  const openAsk = room.asks[0];
   const openDecision = room.decisions.find((decision) => decision.status === "open");
   const lines: string[] = [
     `[ROOM] ${room.title}`,
