@@ -242,6 +242,24 @@ const decisionActionLabels: Record<DecisionAction, string> = {
   close: "Close"
 };
 
+const terminalDecisionActionShortLabels: Record<DecisionAction, string> = {
+  approve: "approve",
+  request_fix: "fix",
+  reject: "reject",
+  snooze: "snooze",
+  retry: "retry",
+  close: "close"
+};
+
+const terminalDecisionActionByLabel: Record<string, DecisionAction> = {
+  Approve: "approve",
+  "Request fix": "request_fix",
+  Reject: "reject",
+  Snooze: "snooze",
+  Retry: "retry",
+  Close: "close"
+};
+
 const productStatuses: Product["status"][] = ["active", "maintain", "paused", "killed"];
 
 const roomSignalFilters: Array<{ id: RoomSignalFilter; label: string }> = [
@@ -1485,6 +1503,7 @@ export function App() {
         onKillRoomRun={killLatestRun}
         onAnswerAsk={(roomId, askId, answer, note) => answerRoomAsk(roomId, askId, answer, note)}
         onCreateTerminal={createRoomFromInput}
+        onDecisionAction={(roomId, action, note) => performDecisionAction(roomId, action, note)}
       />
     );
   }
@@ -1894,7 +1913,8 @@ function TerminalCommandCenter({
   onStartRoomRun,
   onKillRoomRun,
   onAnswerAsk,
-  onCreateTerminal
+  onCreateTerminal,
+  onDecisionAction
 }: {
   workspace: WorkspaceSeed;
   commandCenterRooms: CommandCenterRoomSet;
@@ -1917,6 +1937,7 @@ function TerminalCommandCenter({
   onKillRoomRun: (roomId: string) => void;
   onAnswerAsk: (roomId: string, askId: string, answer: string, note?: string) => void;
   onCreateTerminal: (input: CreateTerminalInput) => Promise<Room | undefined>;
+  onDecisionAction: (roomId: string, action: DecisionAction, note?: string) => void;
 }) {
   const { primaryRoom, secondaryRooms, interventionRoom, interventionItem } = commandCenterRooms;
   const [focusedTerminalRoomId, setFocusedTerminalRoomId] = useState<string | null>(null);
@@ -1942,7 +1963,13 @@ function TerminalCommandCenter({
   ]);
   const terminalRooms = terminalDrawerEntries.map((entry) => entry.room);
   const focusedTerminalRoom = terminalRooms.find((room) => room.id === focusedTerminalRoomId) ?? (focusedTerminalRoomId ? terminalRooms[0] : undefined);
-  const focusedDecisionItem = focusedTerminalRoom?.id === interventionRoom?.id ? interventionItem : undefined;
+  const terminalDecisionByRoomId = new Map<string, DecisionItem>();
+  for (const item of decisionItems) {
+    if (!terminalDecisionByRoomId.has(item.roomId)) {
+      terminalDecisionByRoomId.set(item.roomId, item);
+    }
+  }
+  const focusedDecisionItem = focusedTerminalRoom ? terminalDecisionByRoomId.get(focusedTerminalRoom.id) : undefined;
 
   useEffect(() => {
     window.localStorage.setItem(terminalDrawerLayoutStorageKey, JSON.stringify(terminalDrawerLayouts));
@@ -2291,6 +2318,7 @@ function TerminalCommandCenter({
                   onStartMode={(mode, prompt) => onStartRoomRun(focusedTerminalRoom.id, mode, prompt)}
                   onKillRun={() => onKillRoomRun(focusedTerminalRoom.id)}
                   onAnswerAsk={(askId, answer, note) => onAnswerAsk(focusedTerminalRoom.id, askId, answer, note)}
+                  onDecisionAction={(action, note) => onDecisionAction(focusedTerminalRoom.id, action, note)}
                 />
               </div>
 
@@ -2324,7 +2352,7 @@ function TerminalCommandCenter({
                         runs={roomRuns[entry.room.id] ?? []}
                         runLog={terminalRunLogs[entry.room.id] ?? ""}
                         instructionDraft={terminalInstructions[entry.room.id] ?? ""}
-                        decisionItem={entry.decisionItem}
+                        decisionItem={terminalDecisionByRoomId.get(entry.room.id) ?? entry.decisionItem}
                         selected={entry.room.id === selectedRoomId}
                         variant={entry.role === "intervention" ? "alert" : "default"}
                         drawerLayout={layout}
@@ -2336,6 +2364,7 @@ function TerminalCommandCenter({
                         onStartMode={(mode, prompt) => onStartRoomRun(entry.room.id, mode, prompt)}
                         onKillRun={() => onKillRoomRun(entry.room.id)}
                         onAnswerAsk={(askId, answer, note) => onAnswerAsk(entry.room.id, askId, answer, note)}
+                        onDecisionAction={(action, note) => onDecisionAction(entry.room.id, action, note)}
                       />
                     );
                   })
@@ -2377,7 +2406,8 @@ function TerminalPanel({
   onInstructionChange,
   onStartMode,
   onKillRun,
-  onAnswerAsk
+  onAnswerAsk,
+  onDecisionAction
 }: {
   room: Room;
   workspace: WorkspaceSeed;
@@ -2398,6 +2428,7 @@ function TerminalPanel({
   onStartMode: (mode: ElfRun["mode"], prompt?: string) => void;
   onKillRun: () => void;
   onAnswerAsk: (askId: string, answer: string, note?: string) => void;
+  onDecisionAction: (action: DecisionAction, note?: string) => void;
 }) {
   const product = roomProduct(workspace, room);
   const elf = roomElf(workspace, room);
@@ -2406,6 +2437,7 @@ function TerminalPanel({
   const activeRun = runs.find((run) => run.status === "running");
   const openAsk = room.asks[0];
   const commandDisabled = !canRunCommands || Boolean(activeRun) || Boolean(openAsk);
+  const terminalActions = decisionItem ? terminalDecisionActions(decisionItem) : [];
 
   return (
     <article
@@ -2496,6 +2528,16 @@ function TerminalPanel({
               ))
             ) : activeRun ? (
               <TerminalCommandButton label="stop" tone={tone} disabled={!canRunCommands} onClick={onKillRun} />
+            ) : terminalActions.length > 0 ? (
+              terminalActions.map((action) => (
+                <TerminalCommandButton
+                  key={action}
+                  label={terminalDecisionActionShortLabels[action]}
+                  tone={tone}
+                  disabled={!canRunCommands}
+                  onClick={() => onDecisionAction(action, instructionDraft)}
+                />
+              ))
             ) : (
               <>
                 <TerminalCommandButton label="read" tone={tone} disabled={commandDisabled} onClick={() => onStartMode("codex-readonly", instructionDraft)} />
@@ -2702,6 +2744,21 @@ function terminalToneForRoom(room: Room, variant: "default" | "alert"): Terminal
     return "blue";
   }
   return "muted";
+}
+
+function terminalDecisionActions(item: DecisionItem): DecisionAction[] {
+  const mapped = item.actions
+    .map((label) => terminalDecisionActionByLabel[label])
+    .filter((action): action is DecisionAction => Boolean(action));
+
+  const preferred: DecisionAction[] =
+    item.status === "ready"
+      ? ["approve", "request_fix", "reject"]
+      : item.status === "failed" || item.status === "blocked"
+        ? ["retry", "request_fix", "reject"]
+        : ["snooze", "close"];
+
+  return preferred.filter((action) => mapped.includes(action)).slice(0, 3);
 }
 
 function buildTerminalLines(room: Room, product: Product, elf: ReturnType<typeof roomElf>, runs: ElfRun[], runLog: string, decisionItem?: DecisionItem): string[] {

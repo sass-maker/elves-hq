@@ -251,3 +251,25 @@ Elves HQ MUST let the founder create a new Codex terminal drawer directly from t
 - **WHEN** terminal creation succeeds
 - **THEN** existing terminal drawers, terminal layouts, focused terminal mode, and run controls remain available
 
+### Requirement: Terminal-level decision actions
+
+Elves HQ MUST let the founder take common decision actions from a terminal drawer when that drawer needs founder judgment.
+
+#### Scenario: Ready terminal drawer
+
+- **WHEN** a terminal drawer has a ready review decision
+- **THEN** the drawer exposes compact approve and request-fix actions
+- **AND** those actions use the existing room decision action path
+
+#### Scenario: Failed or blocked terminal drawer
+
+- **WHEN** a terminal drawer has a failed or blocked decision
+- **THEN** the drawer exposes compact retry, request-fix, or reject actions where available
+- **AND** the full workbench remains available for inspection
+
+#### Scenario: Ask takes priority
+
+- **WHEN** a terminal drawer has an unresolved elf ask
+- **THEN** ask-answer options remain the primary terminal footer actions
+- **AND** generic decision buttons do not replace the ask options
+
