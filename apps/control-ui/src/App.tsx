@@ -103,7 +103,7 @@ type PaneLayout = {
   rooms: number;
 };
 
-type RoomWorkbenchTab = "timeline" | "logs" | "artifacts" | "notes" | "memory";
+type RoomWorkbenchTab = "timeline" | "logs" | "artifacts" | "outputs" | "notes" | "memory";
 
 type RoomTimelineTone = "green" | "amber" | "red" | "blue" | "secondary";
 
@@ -114,6 +114,13 @@ type RoomTimelineItem = {
   summary: string;
   time?: string;
   tone: RoomTimelineTone;
+};
+
+type RoomOutputPreview = {
+  id: string;
+  title: string;
+  icon: React.ReactNode;
+  body?: string;
 };
 
 type TaskDraft = {
@@ -131,6 +138,7 @@ const roomWorkbenchTabs: Array<{ id: RoomWorkbenchTab; label: string }> = [
   { id: "timeline", label: "Timeline" },
   { id: "logs", label: "Logs" },
   { id: "artifacts", label: "Artifacts" },
+  { id: "outputs", label: "Outputs" },
   { id: "notes", label: "Notes" },
   { id: "memory", label: "Memory" }
 ];
@@ -2451,6 +2459,15 @@ function RoomDetail({
         memoryDraft={memoryDraft}
         activeMemorySection={activeMemorySection}
         activeTab={activeWorkbenchTab}
+        outputs={[
+          { id: "prompt", title: "Run prompt", icon: <ScrollText size={16} />, body: promptPreview },
+          { id: "transcript", title: "Room transcript", icon: <FileText size={16} />, body: transcriptPreview },
+          { id: "diff", title: "Diff preview", icon: <GitBranch size={16} />, body: diffPreview },
+          { id: "check", title: "Check output", icon: <TestTube2 size={16} />, body: checkPreview },
+          { id: "codevetter", title: "CodeVetter gate", icon: <ShieldCheck size={16} />, body: codevetterPreview },
+          { id: "cleanup", title: "Worktree cleanup", icon: <Trash2 size={16} />, body: cleanupPreview },
+          { id: "apply", title: "Applied diff", icon: <GitBranch size={16} />, body: applyPreview }
+        ]}
         noteDraft={noteDraft}
         onSelectTab={onSelectWorkbenchTab}
         onSelectMemorySection={onSelectMemorySection}
@@ -2459,69 +2476,6 @@ function RoomDetail({
         onNoteDraftChange={onNoteDraftChange}
         onSaveNote={onSaveNote}
       />
-
-      {promptPreview ? (
-        <section>
-          <SectionTitle icon={<ScrollText size={16} />} title="Run prompt" />
-          <pre className="max-h-72 overflow-auto rounded-lg bg-stone-950 p-3 text-xs leading-5 text-stone-100">
-            <code>{promptPreview}</code>
-          </pre>
-        </section>
-      ) : null}
-
-      {transcriptPreview ? (
-        <section>
-          <SectionTitle icon={<FileText size={16} />} title="Room transcript" />
-          <pre className="max-h-96 overflow-auto rounded-lg bg-stone-950 p-3 text-xs leading-5 text-stone-100">
-            <code>{transcriptPreview}</code>
-          </pre>
-        </section>
-      ) : null}
-
-      {diffPreview ? (
-        <section>
-          <SectionTitle icon={<GitBranch size={16} />} title="Diff preview" />
-          <pre className="max-h-72 overflow-auto rounded-lg bg-stone-950 p-3 text-xs leading-5 text-stone-100">
-            <code>{diffPreview}</code>
-          </pre>
-        </section>
-      ) : null}
-
-      {checkPreview ? (
-        <section>
-          <SectionTitle icon={<TestTube2 size={16} />} title="Check output" />
-          <pre className="max-h-72 overflow-auto rounded-lg bg-stone-950 p-3 text-xs leading-5 text-stone-100">
-            <code>{checkPreview}</code>
-          </pre>
-        </section>
-      ) : null}
-
-      {codevetterPreview ? (
-        <section>
-          <SectionTitle icon={<ShieldCheck size={16} />} title="CodeVetter gate" />
-          <pre className="max-h-72 overflow-auto rounded-lg bg-stone-950 p-3 text-xs leading-5 text-stone-100">
-            <code>{codevetterPreview}</code>
-          </pre>
-        </section>
-      ) : null}
-
-      {cleanupPreview ? (
-        <section>
-          <SectionTitle icon={<Trash2 size={16} />} title="Worktree cleanup" />
-          <pre className="max-h-40 overflow-auto rounded-lg bg-stone-950 p-3 text-xs leading-5 text-stone-100">
-            <code>{cleanupPreview}</code>
-          </pre>
-        </section>
-      ) : null}
-
-      {applyPreview ? (
-        <section>
-          <SectionTitle icon={<GitBranch size={16} />} title="Applied diff" />
-          <pre className="max-h-40 overflow-auto rounded-lg bg-stone-950 p-3 text-xs leading-5 text-stone-100">
-            <code>{applyPreview}</code>
-          </pre>
-        </section>
-      ) : null}
 
     </div>
   );
@@ -2535,6 +2489,7 @@ function RoomWorkbench({
   memoryDraft,
   activeMemorySection,
   activeTab,
+  outputs,
   noteDraft,
   onSelectTab,
   onSelectMemorySection,
@@ -2550,6 +2505,7 @@ function RoomWorkbench({
   memoryDraft: string;
   activeMemorySection?: ProductMemorySection;
   activeTab: RoomWorkbenchTab;
+  outputs: RoomOutputPreview[];
   noteDraft: string;
   onSelectTab: (tab: RoomWorkbenchTab) => void;
   onSelectMemorySection: (section: ProductMemorySectionKey) => void;
@@ -2591,6 +2547,7 @@ function RoomWorkbench({
       {activeTab === "timeline" ? <RoomTimelinePanel room={room} runs={runs} /> : null}
       {activeTab === "logs" ? <RoomLogsPanel room={room} /> : null}
       {activeTab === "artifacts" ? <RoomArtifactsPanel room={room} /> : null}
+      {activeTab === "outputs" ? <RoomOutputsPanel outputs={outputs} /> : null}
       {activeTab === "notes" ? (
         <RoomNotesPanel room={room} noteDraft={noteDraft} onNoteDraftChange={onNoteDraftChange} onSaveNote={onSaveNote} />
       ) : null}
@@ -2748,6 +2705,29 @@ function RoomArtifactsPanel({ room }: { room: Room }) {
         ))
       ) : (
         <p className="p-3 text-sm text-stone-500">No artifacts captured yet.</p>
+      )}
+    </div>
+  );
+}
+
+function RoomOutputsPanel({ outputs }: { outputs: RoomOutputPreview[] }) {
+  const openOutputs = outputs.filter((output) => output.body && output.body.trim().length > 0);
+
+  return (
+    <div className="grid gap-3 rounded-xl border border-stone-200 bg-white p-3">
+      {openOutputs.length > 0 ? (
+        openOutputs.map((output) => (
+          <section className="grid gap-2" key={output.id}>
+            <SectionTitle icon={output.icon} title={output.title} />
+            <pre className="max-h-80 overflow-auto rounded-lg bg-stone-950 p-3 text-xs leading-5 text-stone-100">
+              <code>{output.body}</code>
+            </pre>
+          </section>
+        ))
+      ) : (
+        <p className="rounded-lg border border-stone-200 bg-stone-50 p-3 text-sm text-stone-500">
+          Open a prompt, diff, transcript, check output, CodeVetter report, cleanup result, or applied diff result to inspect it here.
+        </p>
       )}
     </div>
   );
