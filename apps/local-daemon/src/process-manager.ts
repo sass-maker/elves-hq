@@ -7,6 +7,7 @@ import { WorkspaceStore } from "./store";
 
 const projectRoot = fileURLToPath(new URL("../../../", import.meta.url));
 const runTimeoutMs = Number(process.env.ELVES_HQ_RUN_TIMEOUT_MS ?? 120_000);
+const maxRetries = Math.max(1, Number(process.env.ELVES_HQ_MAX_RETRIES ?? 3));
 const runsRoot = fileURLToPath(new URL("../../../runs/", import.meta.url));
 
 export interface StartRunOptions {
@@ -88,6 +89,15 @@ export class RoomProcessManager {
     }
 
     const latestRun = this.store.listRuns(roomId)[0];
+    if (latestRun && (latestRun.status === "failed" || latestRun.status === "killed")) {
+      const failedAttempts = this.store.listRuns(roomId).filter((run) => run.mode === latestRun.mode && (run.status === "failed" || run.status === "killed")).length;
+      if (failedAttempts >= maxRetries) {
+        const summary = `Retry budget exhausted for ${latestRun.mode} after ${failedAttempts} failed or killed attempt${failedAttempts === 1 ? "" : "s"}. Inspect logs, adjust context, or request a fix before retrying.`;
+        this.store.markRoomStatus(roomId, "blocked", summary);
+        this.store.appendRoomLog(roomId, "warning", summary);
+        throw new Error(summary);
+      }
+    }
     const retryNote = [latestRun ? `Retrying ${latestRun.mode} from ${latestRun.id}.` : "Starting first dry run.", founderNote?.trim()]
       .filter(Boolean)
       .join(" ");
