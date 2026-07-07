@@ -3016,6 +3016,17 @@ function RoomDetail({
         break;
     }
   };
+  const roomOutputs: RoomOutputPreview[] = [
+    { id: "prompt", title: "Run prompt", icon: <ScrollText size={16} />, body: promptPreview },
+    { id: "run-log", title: "Run log", icon: <SquareTerminal size={16} />, body: runLogPreview },
+    { id: "transcript", title: "Room transcript", icon: <FileText size={16} />, body: transcriptPreview },
+    { id: "diff", title: "Diff preview", icon: <GitBranch size={16} />, body: diffPreview },
+    { id: "check", title: "Check output", icon: <TestTube2 size={16} />, body: checkPreview },
+    { id: "codevetter", title: "CodeVetter gate", icon: <ShieldCheck size={16} />, body: codevetterPreview },
+    { id: "cleanup", title: "Worktree cleanup", icon: <Trash2 size={16} />, body: cleanupPreview },
+    { id: "apply", title: "Applied diff", icon: <GitBranch size={16} />, body: applyPreview }
+  ];
+  const openOutputCount = roomOutputs.filter((output) => output.body && output.body.trim().length > 0).length;
 
   return (
     <div className="grid gap-4 p-4">
@@ -3211,32 +3222,37 @@ function RoomDetail({
         </section>
       ) : null}
 
-      <RoomWorkbench
-        room={room}
-        runs={runs}
-        productMemory={productMemory}
-        selectedMemorySection={selectedMemorySection}
-        memoryDraft={memoryDraft}
-        activeMemorySection={activeMemorySection}
-        activeTab={activeWorkbenchTab}
-        outputs={[
-          { id: "prompt", title: "Run prompt", icon: <ScrollText size={16} />, body: promptPreview },
-          { id: "run-log", title: "Run log", icon: <SquareTerminal size={16} />, body: runLogPreview },
-          { id: "transcript", title: "Room transcript", icon: <FileText size={16} />, body: transcriptPreview },
-          { id: "diff", title: "Diff preview", icon: <GitBranch size={16} />, body: diffPreview },
-          { id: "check", title: "Check output", icon: <TestTube2 size={16} />, body: checkPreview },
-          { id: "codevetter", title: "CodeVetter gate", icon: <ShieldCheck size={16} />, body: codevetterPreview },
-          { id: "cleanup", title: "Worktree cleanup", icon: <Trash2 size={16} />, body: cleanupPreview },
-          { id: "apply", title: "Applied diff", icon: <GitBranch size={16} />, body: applyPreview }
-        ]}
-        noteDraft={noteDraft}
-        onSelectTab={onSelectWorkbenchTab}
-        onSelectMemorySection={onSelectMemorySection}
-        onMemoryDraftChange={onMemoryDraftChange}
-        onSaveMemory={onSaveMemory}
-        onNoteDraftChange={onNoteDraftChange}
-        onSaveNote={onSaveNote}
-      />
+      <details className="rounded-xl border border-stone-800 bg-stone-900/50 p-3">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-bold text-stone-200">
+          <span className="flex items-center gap-2">
+            <PanelRightOpen size={16} />
+            Evidence & memory
+          </span>
+          <span className="flex flex-wrap justify-end gap-2 text-[11px] font-semibold text-stone-500">
+            <span>{runs.length} runs</span>
+            <span>{room.artifacts.length} artifacts</span>
+            <span>{room.logs.length} logs</span>
+            <span>{openOutputCount} outputs</span>
+          </span>
+        </summary>
+        <RoomWorkbench
+          room={room}
+          runs={runs}
+          productMemory={productMemory}
+          selectedMemorySection={selectedMemorySection}
+          memoryDraft={memoryDraft}
+          activeMemorySection={activeMemorySection}
+          activeTab={activeWorkbenchTab}
+          outputs={roomOutputs}
+          noteDraft={noteDraft}
+          onSelectTab={onSelectWorkbenchTab}
+          onSelectMemorySection={onSelectMemorySection}
+          onMemoryDraftChange={onMemoryDraftChange}
+          onSaveMemory={onSaveMemory}
+          onNoteDraftChange={onNoteDraftChange}
+          onSaveNote={onSaveNote}
+        />
+      </details>
 
     </div>
   );
@@ -3276,10 +3292,9 @@ function RoomWorkbench({
   onSaveNote: () => void;
 }) {
   return (
-    <section className="rounded-xl border border-stone-800 bg-stone-900/70 p-3">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <SectionTitle icon={<PanelRightOpen size={16} />} title="Room workbench" />
-        <div className="flex rounded-lg border border-stone-800 bg-stone-950 p-1" aria-label="Room workbench tabs">
+    <section className="mt-3">
+      <div className="mb-3 flex justify-end">
+        <div className="flex flex-wrap rounded-lg border border-stone-800 bg-stone-950 p-1" aria-label="Room workbench tabs">
           {roomWorkbenchTabs.map((tab) => (
             <div
               className={cn(
