@@ -103,6 +103,8 @@ type PaneLayout = {
   rooms: number;
 };
 
+type RoomDeckScope = "active" | "all";
+
 type RoomWorkbenchTab = "timeline" | "logs" | "artifacts" | "outputs" | "notes" | "memory";
 
 type RoomTimelineTone = "green" | "amber" | "red" | "blue" | "secondary";
@@ -244,6 +246,7 @@ export function App() {
   const [roomWorkbenchTabsById, setRoomWorkbenchTabsById] = useState<Record<string, RoomWorkbenchTab>>({});
   const [focusedRoomId, setFocusedRoomId] = useState<string | null>(null);
   const [roomDeckPage, setRoomDeckPage] = useState(0);
+  const [roomDeckScope, setRoomDeckScope] = useState<RoomDeckScope>("active");
   const [newRoom, setNewRoom] = useState({
     productId: seedWorkspace.products[0]?.id ?? "",
     assignedElfId: defaultRoomElfId(seedWorkspace),
@@ -370,7 +373,7 @@ export function App() {
     };
   }, [daemonState, selectedRoomId]);
 
-  const visibleRooms = useMemo(() => {
+  const productFilteredRooms = useMemo(() => {
     const rooms =
       selectedProductId === "all"
         ? workspace.rooms
@@ -378,9 +381,13 @@ export function App() {
 
     return [...rooms].sort((a, b) => statusOrder.indexOf(a.status) - statusOrder.indexOf(b.status));
   }, [selectedProductId, workspace.rooms]);
+  const activeRoomCount = productFilteredRooms.filter((room) => room.status !== "done").length;
+  const visibleRooms = useMemo(
+    () => (roomDeckScope === "active" ? productFilteredRooms.filter((room) => room.status !== "done") : productFilteredRooms),
+    [productFilteredRooms, roomDeckScope]
+  );
 
-  const filteredSelectedRoom = selectedProductId === "all" ? workspace.rooms.find((room) => room.id === selectedRoomId) : visibleRooms.find((room) => room.id === selectedRoomId);
-  const selectedRoom = filteredSelectedRoom ?? visibleRooms[0] ?? workspace.rooms[0];
+  const selectedRoom = visibleRooms.find((room) => room.id === selectedRoomId) ?? visibleRooms[0] ?? workspace.rooms.find((room) => room.id === selectedRoomId) ?? workspace.rooms[0];
   const selectedProduct = workspace.products.find((product) => product.id === (selectedProductId === "all" ? selectedRoom?.productId : selectedProductId));
   const selectedProductInspection = selectedProduct ? productInspections[selectedProduct.id] : undefined;
   const assignedTaskIds = useMemo(() => new Set(workspace.rooms.map((room) => room.taskId)), [workspace.rooms]);
@@ -419,7 +426,7 @@ export function App() {
 
   useEffect(() => {
     setRoomDeckPage(0);
-  }, [selectedProductId]);
+  }, [roomDeckScope, selectedProductId]);
 
   useEffect(() => {
     setRoomDeckPage((current) => Math.min(current, maxRoomDeckPage));
@@ -1388,8 +1395,12 @@ export function App() {
           rooms={visibleRooms}
           workspace={workspace}
           selectedRoomId={selectedRoom.id}
+          scope={roomDeckScope}
+          activeCount={activeRoomCount}
+          totalCount={productFilteredRooms.length}
           page={roomDeckPage}
           pageSize={roomDeckPageSize}
+          onScopeChange={setRoomDeckScope}
           onPageChange={setRoomDeckPage}
           onSelectRoom={setSelectedRoomId}
         />
@@ -1475,16 +1486,24 @@ function RoomDeck({
   rooms,
   workspace,
   selectedRoomId,
+  scope,
+  activeCount,
+  totalCount,
   page,
   pageSize,
+  onScopeChange,
   onPageChange,
   onSelectRoom
 }: {
   rooms: Room[];
   workspace: WorkspaceSeed;
   selectedRoomId: string;
+  scope: RoomDeckScope;
+  activeCount: number;
+  totalCount: number;
   page: number;
   pageSize: number;
+  onScopeChange: (scope: RoomDeckScope) => void;
   onPageChange: (page: number) => void;
   onSelectRoom: (roomId: string) => void;
 }) {
@@ -1504,6 +1523,30 @@ function RoomDeck({
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
+          <div className="mr-1 flex rounded-lg border border-stone-800 bg-stone-950 p-1" aria-label="Room deck scope">
+            <button
+              className={cn(
+                "h-7 rounded-md px-2 text-[11px] font-bold transition-colors",
+                scope === "active" ? "bg-emerald-400 text-stone-950" : "text-stone-400 hover:bg-stone-900 hover:text-stone-100"
+              )}
+              type="button"
+              aria-pressed={scope === "active"}
+              onClick={() => onScopeChange("active")}
+            >
+              Active {activeCount}
+            </button>
+            <button
+              className={cn(
+                "h-7 rounded-md px-2 text-[11px] font-bold transition-colors",
+                scope === "all" ? "bg-emerald-400 text-stone-950" : "text-stone-400 hover:bg-stone-900 hover:text-stone-100"
+              )}
+              type="button"
+              aria-pressed={scope === "all"}
+              onClick={() => onScopeChange("all")}
+            >
+              All {totalCount}
+            </button>
+          </div>
           <Button
             aria-label="Previous room page"
             disabled={!canGoPrevious}
@@ -1551,7 +1594,9 @@ function RoomDeck({
           </div>
         </div>
       ) : (
-        <p className="rounded-xl border border-stone-800 bg-stone-950/60 px-3 py-3 text-sm text-stone-500">No task rooms match this project filter yet.</p>
+        <p className="rounded-xl border border-stone-800 bg-stone-950/60 px-3 py-3 text-sm text-stone-500">
+          {totalCount > 0 && scope === "active" ? "No active rooms in this view. Switch to All to inspect completed rooms." : "No task rooms match this project filter yet."}
+        </p>
       )}
     </section>
   );
