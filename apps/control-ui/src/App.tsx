@@ -34,6 +34,7 @@ import {
   buildDailyBrief,
   buildDecisionItems,
   seedWorkspace,
+  getBlockingArtifacts,
   statusLabels,
   type Artifact,
   type DailyBrief,
@@ -104,6 +105,10 @@ type PaneLayout = {
 };
 
 type RoomDeckScope = "active" | "all";
+
+type RoomSignalFilter = "all" | "needs" | "working" | "ready" | "failed" | "blocked" | "idle";
+
+type RoomSortOrder = "priority" | "recent" | "project";
 
 type OverviewPanel = "needs" | "fm" | "backlog" | "brief";
 
@@ -178,6 +183,22 @@ const decisionActionTone: Record<DecisionAction, "default" | "outline" | "destru
 };
 
 const productStatuses: Product["status"][] = ["active", "maintain", "paused", "killed"];
+
+const roomSignalFilters: Array<{ id: RoomSignalFilter; label: string }> = [
+  { id: "all", label: "All" },
+  { id: "needs", label: "Needs Me" },
+  { id: "working", label: "Working" },
+  { id: "ready", label: "Ready" },
+  { id: "failed", label: "Failed" },
+  { id: "blocked", label: "Blocked" },
+  { id: "idle", label: "Idle" }
+];
+
+const roomSortLabels: Record<RoomSortOrder, string> = {
+  priority: "Priority signal",
+  recent: "Recent activity",
+  project: "Project name"
+};
 const productPriorities: Product["priority"][] = ["P0", "P1", "P2"];
 const taskStatusTone: Record<Task["status"], "green" | "amber" | "red" | "blue" | "secondary"> = {
   inbox: "secondary",
@@ -254,6 +275,8 @@ export function App() {
   const [isAddingProduct, setIsAddingProduct] = useState(false);
   const [activeOverviewPanel, setActiveOverviewPanel] = useState<OverviewPanel>("needs");
   const [paneLayout, setPaneLayout] = useState<PaneLayout>(readStoredPaneLayout);
+  const [roomSignalFilter, setRoomSignalFilter] = useState<RoomSignalFilter>("all");
+  const [roomSortOrder, setRoomSortOrder] = useState<RoomSortOrder>("priority");
   const [roomWorkbenchTabsById, setRoomWorkbenchTabsById] = useState<Record<string, RoomWorkbenchTab>>({});
   const [focusedRoomId, setFocusedRoomId] = useState<string | null>(null);
   const [roomDeckPage, setRoomDeckPage] = useState(0);
@@ -384,6 +407,7 @@ export function App() {
     };
   }, [daemonState, selectedRoomId]);
 
+  const productById = useMemo(() => new Map(workspace.products.map((product) => [product.id, product])), [workspace.products]);
   const productFilteredRooms = useMemo(() => {
     const rooms =
       selectedProductId === "all"
@@ -393,9 +417,11 @@ export function App() {
     return [...rooms].sort((a, b) => statusOrder.indexOf(a.status) - statusOrder.indexOf(b.status));
   }, [selectedProductId, workspace.rooms]);
   const activeRoomCount = productFilteredRooms.filter((room) => room.status !== "done").length;
+  const scopedRooms = useMemo(() => (roomDeckScope === "active" ? productFilteredRooms.filter((room) => room.status !== "done") : productFilteredRooms), [productFilteredRooms, roomDeckScope]);
+  const roomSignalCounts = useMemo(() => buildRoomSignalCounts(scopedRooms), [scopedRooms]);
   const visibleRooms = useMemo(
-    () => (roomDeckScope === "active" ? productFilteredRooms.filter((room) => room.status !== "done") : productFilteredRooms),
-    [productFilteredRooms, roomDeckScope]
+    () => organizeRooms(scopedRooms, roomSignalFilter, roomSortOrder, productById),
+    [productById, roomSignalFilter, roomSortOrder, scopedRooms]
   );
 
   const selectedRoom = visibleRooms.find((room) => room.id === selectedRoomId) ?? visibleRooms[0] ?? workspace.rooms.find((room) => room.id === selectedRoomId) ?? workspace.rooms[0];
@@ -439,7 +465,7 @@ export function App() {
 
   useEffect(() => {
     setRoomDeckPage(0);
-  }, [roomDeckScope, selectedProductId]);
+  }, [roomDeckScope, roomSignalFilter, roomSortOrder, selectedProductId]);
 
   useEffect(() => {
     setRoomDeckPage((current) => Math.min(current, maxRoomDeckPage));
@@ -453,7 +479,7 @@ export function App() {
 
     const selectedPage = Math.floor(selectedIndex / roomDeckPageSize);
     setRoomDeckPage((current) => (current === selectedPage ? current : selectedPage));
-  }, [selectedProductId, selectedRoom.id]);
+  }, [selectedProductId, selectedRoom.id, visibleRooms]);
 
   const startPaneResize = (pane: keyof PaneLayout, event: React.PointerEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -1424,11 +1450,16 @@ export function App() {
           workspace={workspace}
           selectedRoomId={selectedRoom.id}
           scope={roomDeckScope}
+          signalFilter={roomSignalFilter}
+          sortOrder={roomSortOrder}
           activeCount={activeRoomCount}
           totalCount={productFilteredRooms.length}
+          signalCounts={roomSignalCounts}
           page={roomDeckPage}
           pageSize={roomDeckPageSize}
           onScopeChange={setRoomDeckScope}
+          onSignalFilterChange={setRoomSignalFilter}
+          onSortOrderChange={setRoomSortOrder}
           onPageChange={setRoomDeckPage}
           onSelectRoom={setSelectedRoomId}
         />
@@ -1515,11 +1546,16 @@ function RoomDeck({
   workspace,
   selectedRoomId,
   scope,
+  signalFilter,
+  sortOrder,
   activeCount,
   totalCount,
+  signalCounts,
   page,
   pageSize,
   onScopeChange,
+  onSignalFilterChange,
+  onSortOrderChange,
   onPageChange,
   onSelectRoom
 }: {
@@ -1527,11 +1563,16 @@ function RoomDeck({
   workspace: WorkspaceSeed;
   selectedRoomId: string;
   scope: RoomDeckScope;
+  signalFilter: RoomSignalFilter;
+  sortOrder: RoomSortOrder;
   activeCount: number;
   totalCount: number;
+  signalCounts: Record<RoomSignalFilter, number>;
   page: number;
   pageSize: number;
   onScopeChange: (scope: RoomDeckScope) => void;
+  onSignalFilterChange: (filter: RoomSignalFilter) => void;
+  onSortOrderChange: (sortOrder: RoomSortOrder) => void;
   onPageChange: (page: number) => void;
   onSelectRoom: (roomId: string) => void;
 }) {
@@ -1598,6 +1639,41 @@ function RoomDeck({
         </div>
       </div>
 
+      <div className="grid gap-2 rounded-xl border border-stone-800 bg-stone-950/60 p-2">
+        <div className="flex flex-wrap gap-1.5" aria-label="Room signal filter">
+          {roomSignalFilters.map((filter) => (
+            <button
+              className={cn(
+                "h-7 rounded-md border px-2 text-[11px] font-bold transition-colors",
+                signalFilter === filter.id
+                  ? "border-emerald-400 bg-emerald-400 text-stone-950"
+                  : "border-stone-800 bg-stone-950 text-stone-400 hover:border-stone-700 hover:text-stone-100"
+              )}
+              type="button"
+              key={filter.id}
+              aria-pressed={signalFilter === filter.id}
+              onClick={() => onSignalFilterChange(filter.id)}
+            >
+              {filter.label} {signalCounts[filter.id]}
+            </button>
+          ))}
+        </div>
+        <label className="flex items-center justify-between gap-3 text-[11px] font-extrabold uppercase text-stone-500">
+          Sort
+          <select
+            className="h-8 min-w-40 rounded-md border border-stone-800 bg-stone-950 px-2 text-xs font-bold normal-case text-stone-200 outline-none focus:border-emerald-400"
+            value={sortOrder}
+            onChange={(event) => onSortOrderChange(event.target.value as RoomSortOrder)}
+          >
+            {Object.entries(roomSortLabels).map(([value, label]) => (
+              <option value={value} key={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
       {rooms.length > 0 ? (
         <div className="overflow-hidden rounded-xl border border-stone-800 bg-stone-950/60 p-2">
           <div
@@ -1628,6 +1704,120 @@ function RoomDeck({
       )}
     </section>
   );
+}
+
+function buildRoomSignalCounts(rooms: Room[]): Record<RoomSignalFilter, number> {
+  return {
+    all: rooms.length,
+    needs: rooms.filter((room) => roomMatchesSignalFilter(room, "needs")).length,
+    working: rooms.filter((room) => roomMatchesSignalFilter(room, "working")).length,
+    ready: rooms.filter((room) => roomMatchesSignalFilter(room, "ready")).length,
+    failed: rooms.filter((room) => roomMatchesSignalFilter(room, "failed")).length,
+    blocked: rooms.filter((room) => roomMatchesSignalFilter(room, "blocked")).length,
+    idle: rooms.filter((room) => roomMatchesSignalFilter(room, "idle")).length
+  };
+}
+
+function organizeRooms(rooms: Room[], signalFilter: RoomSignalFilter, sortOrder: RoomSortOrder, productById: ReadonlyMap<string, Product>): Room[] {
+  return rooms
+    .filter((room) => roomMatchesSignalFilter(room, signalFilter))
+    .sort((a, b) => compareRooms(a, b, sortOrder, productById));
+}
+
+function roomMatchesSignalFilter(room: Room, signalFilter: RoomSignalFilter): boolean {
+  if (signalFilter === "all") {
+    return true;
+  }
+
+  if (signalFilter === "needs") {
+    return roomNeedsFounder(room);
+  }
+
+  if (signalFilter === "failed") {
+    return room.status === "failed" || getBlockingArtifacts(room).length > 0;
+  }
+
+  if (signalFilter === "ready") {
+    return room.status === "ready" || room.artifacts.some((artifact) => artifact.status === "ready" || artifact.status === "passed");
+  }
+
+  if (signalFilter === "idle") {
+    return room.status === "idle" || room.status === "done";
+  }
+
+  return room.status === signalFilter;
+}
+
+function roomNeedsFounder(room: Room): boolean {
+  return room.status === "asking" || room.status === "ready" || room.status === "blocked" || room.status === "failed" || room.asks.length > 0 || getBlockingArtifacts(room).length > 0;
+}
+
+function compareRooms(a: Room, b: Room, sortOrder: RoomSortOrder, productById: ReadonlyMap<string, Product>): number {
+  if (sortOrder === "recent") {
+    return compareRoomActivityDesc(a, b) || compareRoomTitleAsc(a, b);
+  }
+
+  if (sortOrder === "project") {
+    return compareProductNameAsc(a, b, productById) || compareRoomPriority(a, b) || compareRoomActivityDesc(a, b);
+  }
+
+  return compareRoomPriority(a, b) || compareRoomActivityDesc(a, b) || compareProductNameAsc(a, b, productById);
+}
+
+function compareRoomPriority(a: Room, b: Room): number {
+  return roomPriorityRank(a) - roomPriorityRank(b);
+}
+
+function roomPriorityRank(room: Room): number {
+  if (room.status === "asking" || room.asks.length > 0) {
+    return 0;
+  }
+
+  if (room.status === "failed" || getBlockingArtifacts(room).length > 0) {
+    return 1;
+  }
+
+  if (room.status === "blocked") {
+    return 2;
+  }
+
+  if (room.status === "ready" || room.artifacts.some((artifact) => artifact.status === "ready" || artifact.status === "passed")) {
+    return 3;
+  }
+
+  if (room.status === "working") {
+    return 4;
+  }
+
+  return 5;
+}
+
+function compareRoomActivityDesc(a: Room, b: Room): number {
+  return roomActivitySortValue(b) - roomActivitySortValue(a);
+}
+
+function roomActivitySortValue(room: Room): number {
+  const parsed = Date.parse(room.lastActivityAt);
+  if (Number.isFinite(parsed)) {
+    return parsed;
+  }
+
+  const timeMatch = /^(\d{1,2}):(\d{2})$/.exec(room.lastActivityAt);
+  if (timeMatch) {
+    return Number(timeMatch[1]) * 60 + Number(timeMatch[2]);
+  }
+
+  return 0;
+}
+
+function compareProductNameAsc(a: Room, b: Room, productById: ReadonlyMap<string, Product>): number {
+  const productNameA = productById.get(a.productId)?.name ?? "";
+  const productNameB = productById.get(b.productId)?.name ?? "";
+  return productNameA.localeCompare(productNameB) || compareRoomTitleAsc(a, b);
+}
+
+function compareRoomTitleAsc(a: Room, b: Room): number {
+  return a.title.localeCompare(b.title);
 }
 
 function chunkArray<T>(items: T[], size: number): T[][] {
