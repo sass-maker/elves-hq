@@ -161,6 +161,13 @@ type RoomOutputPreview = {
 
 type ShellView = "overview" | "room";
 
+type CommandCenterRoomSet = {
+  primaryRoom: Room | undefined;
+  secondaryRooms: Room[];
+  interventionRoom: Room | undefined;
+  interventionItem: DecisionItem | undefined;
+};
+
 type ProductPulseRow = {
   product: Product;
   signal: RoomStatus;
@@ -309,6 +316,7 @@ export function App() {
   const [selectedRoomId, setSelectedRoomId] = useState<string>(seedWorkspace.rooms[1]?.id ?? "");
   const [roomNotes, setRoomNotes] = useState<Record<string, string>>({});
   const [roomRuns, setRoomRuns] = useState<Record<string, ElfRun[]>>({});
+  const [terminalRunLogs, setTerminalRunLogs] = useState<Record<string, string>>({});
   const [promptPreview, setPromptPreview] = useState<Record<string, string>>({});
   const [runLogPreview, setRunLogPreview] = useState<Record<string, string>>({});
   const [diffPreview, setDiffPreview] = useState<Record<string, string>>({});
@@ -495,6 +503,20 @@ export function App() {
     () => organizeRooms(scopedRooms, roomSignalFilter, roomSortOrder, productById),
     [productById, roomSignalFilter, roomSortOrder, scopedRooms]
   );
+  const commandCenterRooms = useMemo(
+    () => selectCommandCenterRooms(workspace, visibleRooms.length > 0 ? visibleRooms : workspace.rooms, selectedProductId, decisionItems),
+    [decisionItems, selectedProductId, visibleRooms, workspace]
+  );
+  const commandCenterRoomIds = useMemo(
+    () =>
+      uniqueNonNullableRoomIds([
+        commandCenterRooms.primaryRoom?.id,
+        commandCenterRooms.interventionRoom?.id,
+        ...commandCenterRooms.secondaryRooms.map((room) => room.id)
+      ]),
+    [commandCenterRooms]
+  );
+  const commandCenterRoomKey = commandCenterRoomIds.join("|");
 
   const selectedRoom = visibleRooms.find((room) => room.id === selectedRoomId) ?? visibleRooms[0] ?? workspace.rooms.find((room) => room.id === selectedRoomId) ?? workspace.rooms[0];
   const selectedProduct = workspace.products.find((product) => product.id === (selectedProductId === "all" ? selectedRoom?.productId : selectedProductId));
@@ -552,6 +574,67 @@ export function App() {
     const selectedPage = Math.floor(selectedIndex / roomDeckPageSize);
     setRoomDeckPage((current) => (current === selectedPage ? current : selectedPage));
   }, [selectedProductId, selectedRoom.id, visibleRooms]);
+
+  useEffect(() => {
+    if (daemonState !== "local" || activeShellView !== "overview" || commandCenterRoomIds.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const refreshTerminalRuns = async () => {
+      try {
+        const runEntries = await Promise.all(
+          commandCenterRoomIds.map(async (roomId) => {
+            const response = await fetch(`${daemonBaseUrl}/api/rooms/${roomId}/runs`);
+            if (!response.ok) {
+              return [roomId, []] as const;
+            }
+            const body = (await response.json()) as { runs: ElfRun[] };
+            return [roomId, body.runs] as const;
+          })
+        );
+
+        if (cancelled) {
+          return;
+        }
+
+        const nextRuns = Object.fromEntries(runEntries);
+        setRoomRuns((current) => ({ ...current, ...nextRuns }));
+
+        const logEntries = await Promise.all(
+          runEntries.map(async ([roomId, runs]) => {
+            const latestRun = runs.find((run) => run.status === "running") ?? runs[0];
+            if (!latestRun) {
+              return [roomId, ""] as const;
+            }
+
+            const response = await fetch(`${daemonBaseUrl}/api/runs/${latestRun.id}/logs`);
+            if (!response.ok) {
+              return [roomId, ""] as const;
+            }
+
+            const body = (await response.json()) as { logs: string };
+            return [roomId, body.logs] as const;
+          })
+        );
+
+        if (!cancelled) {
+          setTerminalRunLogs((current) => ({ ...current, ...Object.fromEntries(logEntries) }));
+        }
+      } catch {
+        setSyncState("stale");
+      }
+    };
+
+    void refreshTerminalRuns();
+    const interval = window.setInterval(refreshTerminalRuns, 1500);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [activeShellView, commandCenterRoomIds, commandCenterRoomKey, daemonState]);
 
   const startPaneResize = (pane: keyof PaneLayout, event: React.PointerEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -1328,13 +1411,14 @@ export function App() {
     return (
       <TerminalCommandCenter
         workspace={workspace}
-        rooms={visibleRooms.length > 0 ? visibleRooms : workspace.rooms}
+        commandCenterRooms={commandCenterRooms}
         selectedProductId={selectedProductId}
         selectedRoomId={selectedRoom.id}
         decisionItems={decisionItems}
         dailyBrief={dailyBrief}
         elfFmFeed={elfFmFeed}
         roomRuns={roomRuns}
+        terminalRunLogs={terminalRunLogs}
         daemonState={daemonState}
         syncState={syncState}
         lastSyncAt={lastSyncAt}
@@ -1731,13 +1815,14 @@ export function App() {
 
 function TerminalCommandCenter({
   workspace,
-  rooms,
+  commandCenterRooms,
   selectedProductId,
   selectedRoomId,
   decisionItems,
   dailyBrief,
   elfFmFeed,
   roomRuns,
+  terminalRunLogs,
   daemonState,
   syncState,
   lastSyncAt,
@@ -1746,13 +1831,14 @@ function TerminalCommandCenter({
   onOpenRoomView
 }: {
   workspace: WorkspaceSeed;
-  rooms: Room[];
+  commandCenterRooms: CommandCenterRoomSet;
   selectedProductId: string;
   selectedRoomId: string;
   decisionItems: DecisionItem[];
   dailyBrief: DailyBrief;
   elfFmFeed: ElfFmFeed;
   roomRuns: Record<string, ElfRun[]>;
+  terminalRunLogs: Record<string, string>;
   daemonState: "connecting" | "local" | "fallback";
   syncState: "connecting" | "live" | "stale";
   lastSyncAt: string;
@@ -1760,25 +1846,7 @@ function TerminalCommandCenter({
   onOpenRoom: (room: Room) => void;
   onOpenRoomView: () => void;
 }) {
-  const scopedDecisionItems = decisionItems
-    .filter((item) => selectedProductId === "all" || item.productId === selectedProductId)
-    .sort((a, b) => b.urgency - a.urgency);
-  const interventionItem = scopedDecisionItems[0];
-  const interventionRoom =
-    (interventionItem ? workspace.rooms.find((room) => room.id === interventionItem.roomId) : undefined) ??
-    rooms.find((room) => room.status === "asking" || room.status === "blocked" || room.status === "failed" || room.status === "ready");
-
-  const sortedRooms = [...rooms]
-    .filter((room) => room.status !== "done")
-    .sort((a, b) => statusOrder.indexOf(a.status) - statusOrder.indexOf(b.status) || compareRoomActivityDesc(a, b));
-  const primaryRoom = sortedRooms.find((room) => room.status === "working") ?? sortedRooms.find((room) => room.status === "ready") ?? sortedRooms[0];
-  const smallRooms = sortedRooms
-    .filter((room) => room.id !== primaryRoom?.id && room.id !== interventionRoom?.id)
-    .slice(0, 2);
-  const fallbackRooms = workspace.rooms
-    .filter((room) => room.id !== primaryRoom?.id && room.id !== interventionRoom?.id && !smallRooms.some((item) => item.id === room.id))
-    .slice(0, Math.max(0, 2 - smallRooms.length));
-  const secondaryRooms = [...smallRooms, ...fallbackRooms].slice(0, 2);
+  const { primaryRoom, secondaryRooms, interventionRoom, interventionItem } = commandCenterRooms;
   const activeCount = workspace.rooms.filter((room) => room.status === "working").length;
   const interventionCount = decisionItems.length;
   const systemLoad = Math.min(92, Math.max(8, activeCount * 18 + interventionCount * 9));
@@ -1916,6 +1984,7 @@ function TerminalCommandCenter({
                   room={primaryRoom}
                   workspace={workspace}
                   runs={roomRuns[primaryRoom.id] ?? []}
+                  runLog={terminalRunLogs[primaryRoom.id] ?? ""}
                   selected={primaryRoom.id === selectedRoomId}
                   span="large"
                   onOpen={() => onOpenRoom(primaryRoom)}
@@ -1929,6 +1998,7 @@ function TerminalCommandCenter({
                   room={room}
                   workspace={workspace}
                   runs={roomRuns[room.id] ?? []}
+                  runLog={terminalRunLogs[room.id] ?? ""}
                   selected={room.id === selectedRoomId}
                   onOpen={() => onOpenRoom(room)}
                 />
@@ -1943,6 +2013,7 @@ function TerminalCommandCenter({
                 room={interventionRoom}
                 workspace={workspace}
                 runs={roomRuns[interventionRoom.id] ?? []}
+                runLog={terminalRunLogs[interventionRoom.id] ?? ""}
                 decisionItem={interventionItem}
                 selected={interventionRoom.id === selectedRoomId}
                 variant="alert"
@@ -1962,6 +2033,7 @@ function TerminalPanel({
   room,
   workspace,
   runs,
+  runLog,
   decisionItem,
   selected,
   variant = "default",
@@ -1971,6 +2043,7 @@ function TerminalPanel({
   room: Room;
   workspace: WorkspaceSeed;
   runs: ElfRun[];
+  runLog: string;
   decisionItem?: DecisionItem;
   selected: boolean;
   variant?: "default" | "alert";
@@ -1980,7 +2053,7 @@ function TerminalPanel({
   const product = roomProduct(workspace, room);
   const elf = roomElf(workspace, room);
   const tone = terminalToneForRoom(room, variant);
-  const lines = buildTerminalLines(room, product, elf, runs, decisionItem);
+  const lines = buildTerminalLines(room, product, elf, runs, runLog, decisionItem);
 
   return (
     <article
@@ -2136,8 +2209,20 @@ function terminalToneForRoom(room: Room, variant: "default" | "alert"): Terminal
   return "muted";
 }
 
-function buildTerminalLines(room: Room, product: Product, elf: ReturnType<typeof roomElf>, runs: ElfRun[], decisionItem?: DecisionItem): string[] {
+function buildTerminalLines(room: Room, product: Product, elf: ReturnType<typeof roomElf>, runs: ElfRun[], runLog: string, decisionItem?: DecisionItem): string[] {
   const latestRun = runs.find((run) => run.status === "running") ?? runs[0];
+  const runLogLines = runLog.trim() ? tailTerminalLog(runLog, 24) : [];
+
+  if (latestRun && runLogLines.length > 0) {
+    return [
+      `$ ${latestRun.command}`,
+      `# ${latestRun.mode} // ${runTimingLabel(latestRun)}`,
+      ...(latestRun.workspacePath ? [`# cwd ${latestRun.workspacePath}`] : []),
+      "",
+      ...runLogLines
+    ].map(trimTerminalLine);
+  }
+
   const openAsk = room.asks[0];
   const openDecision = room.decisions.find((decision) => decision.status === "open");
   const lines: string[] = [
@@ -2187,8 +2272,18 @@ function buildTerminalLines(room: Room, product: Product, elf: ReturnType<typeof
   return lines.map(trimTerminalLine).slice(0, 18);
 }
 
+function tailTerminalLog(runLog: string, maxLines: number): string[] {
+  const lines = runLog
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map((line) => line.replace(/\t/g, "  "))
+    .filter((line, index, allLines) => line.trim() || index > allLines.length - maxLines);
+
+  return lines.slice(-maxLines);
+}
+
 function trimTerminalLine(line: string): string {
-  return line.length > 132 ? `${line.slice(0, 129)}...` : line;
+  return line.length > 170 ? `${line.slice(0, 167)}...` : line;
 }
 
 function terminalLineClass(line: string): string {
@@ -2596,6 +2691,36 @@ function compareProductNameAsc(a: Room, b: Room, productById: ReadonlyMap<string
 
 function compareRoomTitleAsc(a: Room, b: Room): number {
   return a.title.localeCompare(b.title);
+}
+
+function selectCommandCenterRooms(workspace: WorkspaceSeed, rooms: Room[], selectedProductId: string, decisionItems: DecisionItem[]): CommandCenterRoomSet {
+  const scopedDecisionItems = decisionItems
+    .filter((item) => selectedProductId === "all" || item.productId === selectedProductId)
+    .sort((a, b) => b.urgency - a.urgency);
+  const interventionItem = scopedDecisionItems[0];
+  const interventionRoom =
+    (interventionItem ? workspace.rooms.find((room) => room.id === interventionItem.roomId) : undefined) ??
+    rooms.find((room) => room.status === "asking" || room.status === "blocked" || room.status === "failed" || room.status === "ready");
+
+  const sortedRooms = [...rooms]
+    .filter((room) => room.status !== "done")
+    .sort((a, b) => statusOrder.indexOf(a.status) - statusOrder.indexOf(b.status) || compareRoomActivityDesc(a, b));
+  const primaryRoom = sortedRooms.find((room) => room.status === "working") ?? sortedRooms.find((room) => room.status === "ready") ?? sortedRooms[0];
+  const smallRooms = sortedRooms.filter((room) => room.id !== primaryRoom?.id && room.id !== interventionRoom?.id).slice(0, 2);
+  const fallbackRooms = workspace.rooms
+    .filter((room) => room.id !== primaryRoom?.id && room.id !== interventionRoom?.id && !smallRooms.some((item) => item.id === room.id))
+    .slice(0, Math.max(0, 2 - smallRooms.length));
+
+  return {
+    primaryRoom,
+    secondaryRooms: [...smallRooms, ...fallbackRooms].slice(0, 2),
+    interventionRoom,
+    interventionItem
+  };
+}
+
+function uniqueNonNullableRoomIds(roomIds: Array<string | undefined>): string[] {
+  return Array.from(new Set(roomIds.filter((roomId): roomId is string => Boolean(roomId))));
 }
 
 function folderNameToProductName(path: string): string {
