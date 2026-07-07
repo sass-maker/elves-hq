@@ -77,6 +77,12 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    if (request.method === "POST" && url.pathname === "/api/products/inspect-path") {
+      const body = await readJson(request);
+      sendJson(response, 200, store.inspectProductPath(readInspectProductPathInput(body)));
+      return;
+    }
+
     if (request.method === "POST" && url.pathname === "/api/tasks") {
       const body = await readJson(request);
       const task = store.createTask(readCreateTaskInput(body));
@@ -415,6 +421,20 @@ function readCreateProductInput(body: unknown) {
     currentGoal: typeof value.currentGoal === "string" ? value.currentGoal : undefined,
     priority,
     status
+  };
+}
+
+function readInspectProductPathInput(body: unknown) {
+  if (!body || typeof body !== "object") {
+    throw new Error("Product path body is required");
+  }
+  const value = body as { name?: unknown; localPath?: unknown };
+  if (typeof value.localPath !== "string") {
+    throw new Error("localPath is required");
+  }
+  return {
+    name: typeof value.name === "string" ? value.name : "",
+    localPath: value.localPath
   };
 }
 

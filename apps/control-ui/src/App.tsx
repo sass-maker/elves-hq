@@ -197,6 +197,8 @@ export function App() {
   const [dailyBrief, setDailyBrief] = useState<DailyBrief>(buildDailyBrief(seedWorkspace));
   const [elfFmFeed, setElfFmFeed] = useState<ElfFmFeed>(buildElfFmFeed(seedWorkspace));
   const [productInspections, setProductInspections] = useState<Record<string, ProductFolderInspection>>({});
+  const [draftProductInspection, setDraftProductInspection] = useState<ProductFolderInspection | undefined>();
+  const [draftProductInspectionError, setDraftProductInspectionError] = useState("");
   const [productMemoryById, setProductMemoryById] = useState<Record<string, ProductMemory>>({});
   const [selectedMemorySection, setSelectedMemorySection] = useState<ProductMemorySectionKey>("PRODUCT");
   const [memoryDrafts, setMemoryDrafts] = useState<Record<string, string>>({});
@@ -359,6 +361,21 @@ export function App() {
   const isRoomFocused = focusedRoomId === selectedRoom?.id;
   const mainGridTemplateColumns = isRoomFocused ? "minmax(720px, 1fr)" : `${paneLayout.fleet}px 10px ${paneLayout.rooms}px 10px minmax(380px, 1fr)`;
   const selectedRoomWorkbenchTab = selectedRoom ? roomWorkbenchTabsById[selectedRoom.id] ?? "logs" : "logs";
+  const draftProduct = useMemo<Product | undefined>(() => {
+    const localPath = newProduct.localPath.trim();
+    if (!localPath) {
+      return undefined;
+    }
+    return {
+      id: "draft-product",
+      name: newProduct.name.trim() || "Draft project",
+      slug: "draft-product",
+      localPath,
+      status: "active",
+      priority: "P1",
+      currentGoal: newProduct.currentGoal.trim()
+    };
+  }, [newProduct.currentGoal, newProduct.localPath, newProduct.name]);
 
   const startPaneResize = (pane: keyof PaneLayout, event: React.PointerEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -434,6 +451,54 @@ export function App() {
       cancelled = true;
     };
   }, [daemonState, selectedProduct?.id]);
+
+  useEffect(() => {
+    const localPath = newProduct.localPath.trim();
+    if (daemonState !== "local" || !isAddingProduct || !localPath) {
+      setDraftProductInspection(undefined);
+      setDraftProductInspectionError("");
+      return;
+    }
+
+    let cancelled = false;
+    setDraftProductInspection(undefined);
+    setDraftProductInspectionError("");
+
+    const timeout = window.setTimeout(() => {
+      fetch(`${daemonBaseUrl}/api/products/inspect-path`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          name: newProduct.name,
+          localPath
+        })
+      })
+        .then(async (response) => {
+          if (!response.ok) {
+            const body = (await response.json().catch(() => ({}))) as { error?: string };
+            throw new Error(body.error ?? `Daemon returned ${response.status}`);
+          }
+          return (await response.json()) as ProductFolderInspection;
+        })
+        .then((inspection) => {
+          if (!cancelled) {
+            setDraftProductInspection(inspection);
+          }
+        })
+        .catch((error: unknown) => {
+          if (!cancelled) {
+            setDraftProductInspectionError(error instanceof Error ? error.message : "Folder preview failed.");
+          }
+        });
+    }, 300);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
+  }, [daemonState, isAddingProduct, newProduct.localPath, newProduct.name]);
 
   useEffect(() => {
     window.localStorage.setItem(paneLayoutStorageKey, JSON.stringify(paneLayout));
@@ -746,6 +811,8 @@ export function App() {
       assignedElfId: body.workspace.elves.some((elf) => elf.id === current.assignedElfId) ? current.assignedElfId : defaultRoomElfId(body.workspace)
     }));
     setNewProduct({ name: "", localPath: "", currentGoal: "" });
+    setDraftProductInspection(undefined);
+    setDraftProductInspectionError("");
     setProductInspections((current) => {
       const next = { ...current };
       delete next[body.product.id];
@@ -949,6 +1016,12 @@ export function App() {
             <Button size="sm" type="button" onClick={createProduct} disabled={!newProduct.name.trim() || !newProduct.localPath.trim()}>
               Add project
             </Button>
+            {draftProduct ? (
+              <ProductFolderCard product={draftProduct} inspection={draftProductInspection} />
+            ) : null}
+            {draftProductInspectionError ? (
+              <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-xs leading-5 text-amber-200">{draftProductInspectionError}</p>
+            ) : null}
           </section>
         ) : null}
 

@@ -303,6 +303,24 @@ export class WorkspaceStore {
     return inspectProduct(product);
   }
 
+  inspectProductPath(input: Pick<CreateProductInput, "name" | "localPath">): ProductFolderInspection {
+    const localPath = input.localPath.trim();
+    if (!localPath) {
+      throw new Error("Local folder path is required.");
+    }
+
+    const name = input.name.trim() || "Draft product";
+    return inspectProduct({
+      id: `draft-${safePathSegment(name)}`,
+      name,
+      slug: safePathSegment(name),
+      localPath: normalizeLocalPath(localPath),
+      status: "active",
+      priority: "P1",
+      currentGoal: ""
+    });
+  }
+
   createProduct(input: CreateProductInput): Product {
     const name = input.name.trim();
     const localPath = input.localPath.trim();
