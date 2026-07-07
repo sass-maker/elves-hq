@@ -854,6 +854,7 @@ export function App() {
     const body = (await response.json()) as { room: Room; run: ElfRun };
     replaceRoom(body.room);
     setRoomRuns((current) => ({ ...current, [roomId]: [body.run, ...(current[roomId] ?? [])] }));
+    setTerminalRunLogs((current) => ({ ...current, [roomId]: "" }));
     setRunInstructionsByRoomId((current) => {
       const next = { ...current };
       delete next[roomId];
@@ -1425,6 +1426,8 @@ export function App() {
         onSelectProduct={setSelectedProductId}
         onOpenRoom={openRoomFromCommandCenter}
         onOpenRoomView={() => setActiveShellView("room")}
+        onStartRoomRun={(roomId, mode) => startRoomRun(roomId, mode)}
+        onKillRoomRun={killLatestRun}
       />
     );
   }
@@ -1828,7 +1831,9 @@ function TerminalCommandCenter({
   lastSyncAt,
   onSelectProduct,
   onOpenRoom,
-  onOpenRoomView
+  onOpenRoomView,
+  onStartRoomRun,
+  onKillRoomRun
 }: {
   workspace: WorkspaceSeed;
   commandCenterRooms: CommandCenterRoomSet;
@@ -1845,6 +1850,8 @@ function TerminalCommandCenter({
   onSelectProduct: (productId: string) => void;
   onOpenRoom: (room: Room) => void;
   onOpenRoomView: () => void;
+  onStartRoomRun: (roomId: string, mode: ElfRun["mode"]) => void;
+  onKillRoomRun: (roomId: string) => void;
 }) {
   const { primaryRoom, secondaryRooms, interventionRoom, interventionItem } = commandCenterRooms;
   const activeCount = workspace.rooms.filter((room) => room.status === "working").length;
@@ -1859,7 +1866,7 @@ function TerminalCommandCenter({
           <button
             className="mb-7 grid h-9 w-9 place-items-center rounded-md text-slate-400 transition-colors hover:bg-slate-900 hover:text-blue-200"
             type="button"
-            aria-label="Open room controls"
+            aria-label="Open terminal inspector"
             onClick={onOpenRoomView}
           >
             <ChevronLeft size={20} />
@@ -1953,10 +1960,10 @@ function TerminalCommandCenter({
               {selectedProductId === "all" ? "All projects" : workspace.products.find((product) => product.id === selectedProductId)?.name ?? "All projects"}
             </button>
             <div className="flex items-center gap-3 text-slate-400">
-              <button className="grid size-8 place-items-center rounded transition-colors hover:bg-slate-950 hover:text-blue-100" type="button" aria-label="Open room controls" onClick={onOpenRoomView}>
+              <button className="grid size-8 place-items-center rounded transition-colors hover:bg-slate-950 hover:text-blue-100" type="button" aria-label="Open terminal inspector" onClick={onOpenRoomView}>
                 <Maximize2 size={18} />
               </button>
-              <button className="grid size-8 place-items-center rounded transition-colors hover:bg-slate-950 hover:text-blue-100" type="button" aria-label="Open room controls" onClick={onOpenRoomView}>
+              <button className="grid size-8 place-items-center rounded transition-colors hover:bg-slate-950 hover:text-blue-100" type="button" aria-label="Open terminal inspector" onClick={onOpenRoomView}>
                 <Settings2 size={18} />
               </button>
               <button
@@ -1987,10 +1994,13 @@ function TerminalCommandCenter({
                   runLog={terminalRunLogs[primaryRoom.id] ?? ""}
                   selected={primaryRoom.id === selectedRoomId}
                   span="large"
+                  canRunCommands={daemonState === "local"}
                   onOpen={() => onOpenRoom(primaryRoom)}
+                  onStartMode={(mode) => onStartRoomRun(primaryRoom.id, mode)}
+                  onKillRun={() => onKillRoomRun(primaryRoom.id)}
                 />
               ) : (
-                <TerminalEmptyPanel title="No active rooms" body="Add a local project and create a task room from the room controls." />
+                <TerminalEmptyPanel title="No active terminals" body="Add a local project and create a task terminal from the inspector." />
               )}
               {secondaryRooms.map((room) => (
                 <TerminalPanel
@@ -2000,11 +2010,14 @@ function TerminalCommandCenter({
                   runs={roomRuns[room.id] ?? []}
                   runLog={terminalRunLogs[room.id] ?? ""}
                   selected={room.id === selectedRoomId}
+                  canRunCommands={daemonState === "local"}
                   onOpen={() => onOpenRoom(room)}
+                  onStartMode={(mode) => onStartRoomRun(room.id, mode)}
+                  onKillRun={() => onKillRoomRun(room.id)}
                 />
               ))}
               {secondaryRooms.length === 0 ? (
-                <TerminalEmptyPanel title="Room bay idle" body={`Daily Brief: ${dailyBrief.totals.ready} ready, ${dailyBrief.totals.blocked + dailyBrief.totals.failed} stuck.`} />
+                <TerminalEmptyPanel title="Terminal bay idle" body={`Daily Brief: ${dailyBrief.totals.ready} ready, ${dailyBrief.totals.blocked + dailyBrief.totals.failed} stuck.`} />
               ) : null}
             </div>
 
@@ -2017,7 +2030,10 @@ function TerminalCommandCenter({
                 decisionItem={interventionItem}
                 selected={interventionRoom.id === selectedRoomId}
                 variant="alert"
+                canRunCommands={daemonState === "local"}
                 onOpen={() => onOpenRoom(interventionRoom)}
+                onStartMode={(mode) => onStartRoomRun(interventionRoom.id, mode)}
+                onKillRun={() => onKillRoomRun(interventionRoom.id)}
               />
             ) : (
               <TerminalEmptyPanel title="No intervention" body={elfFmFeed.globalStation.nowPlaying || "Elves are quiet. No founder decision is open."} variant="alert" />
@@ -2038,7 +2054,10 @@ function TerminalPanel({
   selected,
   variant = "default",
   span,
-  onOpen
+  canRunCommands,
+  onOpen,
+  onStartMode,
+  onKillRun
 }: {
   room: Room;
   workspace: WorkspaceSeed;
@@ -2048,12 +2067,17 @@ function TerminalPanel({
   selected: boolean;
   variant?: "default" | "alert";
   span?: "large";
+  canRunCommands: boolean;
   onOpen: () => void;
+  onStartMode: (mode: ElfRun["mode"]) => void;
+  onKillRun: () => void;
 }) {
   const product = roomProduct(workspace, room);
   const elf = roomElf(workspace, room);
   const tone = terminalToneForRoom(room, variant);
   const lines = buildTerminalLines(room, product, elf, runs, runLog, decisionItem);
+  const activeRun = runs.find((run) => run.status === "running");
+  const commandDisabled = !canRunCommands || Boolean(activeRun);
 
   return (
     <article
@@ -2073,10 +2097,10 @@ function TerminalPanel({
           </span>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <button className={cn("transition-colors", terminalToneClasses[tone].icon)} type="button" aria-label={`Open ${room.title}`} onClick={onOpen}>
+          <button className={cn("transition-colors", terminalToneClasses[tone].icon)} type="button" aria-label={`Inspect ${room.title}`} onClick={onOpen}>
             <Maximize2 size={17} />
           </button>
-          <button className="text-slate-600 transition-colors hover:text-slate-300" type="button" aria-label="Minimize room">
+          <button className="text-slate-600 transition-colors hover:text-slate-300" type="button" aria-label="Terminal options">
             <Minimize2 size={17} />
           </button>
         </div>
@@ -2093,14 +2117,25 @@ function TerminalPanel({
         ))}
         <span className={cn("mt-1 inline-block h-4 w-2 align-middle terminal-cursor", terminalToneClasses[tone].cursor)} />
       </button>
-      <footer className={cn("absolute bottom-4 right-4 flex items-center gap-3 rounded-full border bg-[#020408]/92 py-1.5 pl-3 pr-2 shadow-xl shadow-black/40 backdrop-blur", terminalToneClasses[tone].footer)}>
+      <footer className={cn("absolute inset-x-4 bottom-4 flex items-center justify-between gap-3 rounded-full border bg-[#020408]/92 py-1.5 pl-3 pr-2 shadow-xl shadow-black/40 backdrop-blur", terminalToneClasses[tone].footer)}>
         <span className="flex items-center gap-2">
           <span className={cn("size-1.5 rounded-full", terminalToneClasses[tone].dot)} />
           <span className={cn("font-mono text-[10px] uppercase tracking-[0.12em]", terminalToneClasses[tone].title)}>
             {elf.name} {statusLabels[room.status]}
           </span>
         </span>
-        <span className="grid size-6 place-items-center rounded-full border border-slate-700 bg-slate-950 text-[10px] text-slate-400">{elf.name.slice(0, 1)}</span>
+        <span className="flex items-center gap-1.5">
+          {activeRun ? (
+            <TerminalCommandButton label="stop" tone={tone} disabled={!canRunCommands} onClick={onKillRun} />
+          ) : (
+            <>
+              <TerminalCommandButton label="read" tone={tone} disabled={commandDisabled} onClick={() => onStartMode("codex-readonly")} />
+              <TerminalCommandButton label="build" tone={tone} disabled={commandDisabled} onClick={() => onStartMode("codex-worktree")} />
+              <TerminalCommandButton label="dry" tone={tone} disabled={commandDisabled} onClick={() => onStartMode("dry-run")} />
+            </>
+          )}
+          <span className="ml-1 grid size-6 place-items-center rounded-full border border-slate-700 bg-slate-950 text-[10px] text-slate-400">{elf.name.slice(0, 1)}</span>
+        </span>
       </footer>
       <div className="absolute bottom-1 right-1 text-slate-700 opacity-40 transition-opacity group-hover:opacity-90">
         <GripVertical size={14} className="-rotate-45" />
@@ -2123,6 +2158,39 @@ function TerminalEmptyPanel({ title, body, variant = "default" }: { title: strin
         </div>
       </div>
     </article>
+  );
+}
+
+function TerminalCommandButton({
+  label,
+  tone,
+  disabled = false,
+  onClick
+}: {
+  label: string;
+  tone: TerminalTone;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      className={cn(
+        "h-6 rounded-full border px-2 font-mono text-[10px] uppercase tracking-[0.12em] transition-colors disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-700",
+        tone === "alert" || tone === "red"
+          ? "border-red-300/25 text-red-100/80 hover:border-red-300/50 hover:text-red-100"
+          : tone === "amber"
+            ? "border-amber-300/25 text-amber-100/80 hover:border-amber-300/50 hover:text-amber-100"
+            : "border-blue-300/20 text-blue-100/75 hover:border-blue-300/45 hover:text-blue-100"
+      )}
+      type="button"
+      disabled={disabled}
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick();
+      }}
+    >
+      {label}
+    </button>
   );
 }
 
