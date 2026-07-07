@@ -38,6 +38,18 @@ export interface ProductFolderInspection {
   warnings: string[];
 }
 
+export interface LocalFolderEntry {
+  name: string;
+  path: string;
+}
+
+export interface LocalFolderListing {
+  rootPath: string;
+  currentPath: string;
+  parentPath: string | null;
+  entries: LocalFolderEntry[];
+}
+
 export interface Elf {
   id: string;
   name: string;

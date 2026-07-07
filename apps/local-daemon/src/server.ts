@@ -70,6 +70,11 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    if (request.method === "GET" && url.pathname === "/api/folders") {
+      sendJson(response, 200, store.browseLocalFolders(url.searchParams.get("path")));
+      return;
+    }
+
     if (request.method === "POST" && url.pathname === "/api/products") {
       const body = await readJson(request);
       const product = store.createProduct(readCreateProductInput(body));

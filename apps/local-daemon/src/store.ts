@@ -1,6 +1,6 @@
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync, realpathSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync, realpathSync } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { dirname, isAbsolute, resolve } from "node:path";
+import { dirname, isAbsolute, resolve, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import {
@@ -21,6 +21,7 @@ import {
   type Elf,
   type ElfFmFeed,
   type ElfRun,
+  type LocalFolderListing,
   type Playbook,
   type Product,
   type ProductFolderInspection,
@@ -37,8 +38,10 @@ import {
 
 const databasePath = fileURLToPath(new URL("../../../data/elves.db", import.meta.url));
 const projectRoot = fileURLToPath(new URL("../../../", import.meta.url));
+const fleetRoot = resolve(projectRoot, "..");
 const memoryRoot = fileURLToPath(new URL("../../../memory/", import.meta.url));
 const transcriptsRoot = fileURLToPath(new URL("../../../runs/room-transcripts/", import.meta.url));
+const hiddenFolderNames = new Set([".git", ".next", ".turbo", ".vercel", "coverage", "data", "dist", "node_modules", "runs"]);
 
 interface RoomRow {
   id: string;
@@ -217,6 +220,39 @@ export class WorkspaceStore {
 
   getElfFmFeed(): ElfFmFeed {
     return buildElfFmFeed(this.getWorkspace());
+  }
+
+  browseLocalFolders(pathInput?: string | null): LocalFolderListing {
+    const rootPath = realpathSync(fleetRoot);
+    const requestedPath = pathInput?.trim() ? resolveFolderBrowserPath(pathInput.trim(), rootPath) : rootPath;
+    const currentPath = realpathSync(requestedPath);
+    if (!isInsideRoot(rootPath, currentPath)) {
+      throw new Error("Folder browser path must stay inside the fleet root.");
+    }
+
+    const currentStat = statSync(currentPath);
+    if (!currentStat.isDirectory()) {
+      throw new Error("Folder browser path is not a directory.");
+    }
+
+    const parent = dirname(currentPath);
+    const parentPath = currentPath === rootPath || !isInsideRoot(rootPath, parent) ? null : parent;
+    const entries = readdirSync(currentPath, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .filter((entry) => !entry.name.startsWith("."))
+      .filter((entry) => !hiddenFolderNames.has(entry.name))
+      .map((entry) => ({
+        name: entry.name,
+        path: resolve(currentPath, entry.name)
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    return {
+      rootPath,
+      currentPath,
+      parentPath,
+      entries
+    };
   }
 
   generateRoomTranscript(roomId: string): { roomId: string; outputPath: string; transcript: string; room: Room } {
@@ -1214,6 +1250,15 @@ function inspectProduct(product: Product): ProductFolderInspection {
 function resolveProductPath(localPath: string) {
   const expanded = localPath.startsWith("~/") ? `${process.env.HOME ?? "~"}${localPath.slice(1)}` : localPath;
   return isAbsolute(expanded) ? expanded : resolve(projectRoot, expanded);
+}
+
+function resolveFolderBrowserPath(pathInput: string, rootPath: string) {
+  const expanded = pathInput.startsWith("~/") ? `${process.env.HOME ?? "~"}${pathInput.slice(1)}` : pathInput;
+  return isAbsolute(expanded) ? expanded : resolve(rootPath, expanded);
+}
+
+function isInsideRoot(rootPath: string, candidatePath: string) {
+  return candidatePath === rootPath || candidatePath.startsWith(`${rootPath}${sep}`);
 }
 
 function readPackageJson(packageJsonPath: string, warnings: string[]) {

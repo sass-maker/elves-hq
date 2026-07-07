@@ -46,6 +46,7 @@ import {
   type ElfFmStation,
   type ElfFmTranscriptItem,
   type ElfRun,
+  type LocalFolderListing,
   type Playbook,
   type Product,
   type ProductFolderInspection,
@@ -267,6 +268,8 @@ export function App() {
   const [productInspections, setProductInspections] = useState<Record<string, ProductFolderInspection>>({});
   const [draftProductInspection, setDraftProductInspection] = useState<ProductFolderInspection | undefined>();
   const [draftProductInspectionError, setDraftProductInspectionError] = useState("");
+  const [folderListing, setFolderListing] = useState<LocalFolderListing | undefined>();
+  const [folderListingStatus, setFolderListingStatus] = useState("");
   const [productSettingsStatus, setProductSettingsStatus] = useState<Record<string, string>>({});
   const [productMemoryById, setProductMemoryById] = useState<Record<string, ProductMemory>>({});
   const [selectedMemorySection, setSelectedMemorySection] = useState<ProductMemorySectionKey>("PRODUCT");
@@ -605,6 +608,14 @@ export function App() {
   }, [daemonState, isAddingProduct, newProduct.localPath, newProduct.name]);
 
   useEffect(() => {
+    if (daemonState !== "local" || !isAddingProduct || folderListing) {
+      return;
+    }
+
+    void loadFolderListing();
+  }, [daemonState, folderListing, isAddingProduct]);
+
+  useEffect(() => {
     window.localStorage.setItem(paneLayoutStorageKey, JSON.stringify(paneLayout));
   }, [paneLayout]);
 
@@ -925,6 +936,38 @@ export function App() {
     setIsAddingProduct(false);
   };
 
+  const loadFolderListing = async (path?: string | null) => {
+    if (daemonState !== "local") {
+      setFolderListingStatus("Local daemon is required for folder browsing.");
+      return;
+    }
+
+    setFolderListingStatus("Loading folders...");
+    const url = new URL(`${daemonBaseUrl}/api/folders`);
+    if (path) {
+      url.searchParams.set("path", path);
+    }
+
+    const response = await fetch(url);
+    if (!response.ok) {
+      const body = (await response.json().catch(() => ({ error: "Folder browser failed." }))) as { error?: string };
+      setFolderListingStatus(body.error ?? "Folder browser failed.");
+      return;
+    }
+
+    const listing = (await response.json()) as LocalFolderListing;
+    setFolderListing(listing);
+    setFolderListingStatus("");
+  };
+
+  const selectProductFolder = (path: string) => {
+    setNewProduct((current) => ({
+      ...current,
+      name: current.name.trim() ? current.name : folderNameToProductName(path),
+      localPath: path
+    }));
+  };
+
   const createRoom = async () => {
     const title = newRoom.title.trim();
     if (!title) {
@@ -1200,6 +1243,13 @@ export function App() {
               value={newProduct.localPath}
               onChange={(event) => setNewProduct((current) => ({ ...current, localPath: event.target.value }))}
               placeholder="/Users/sarthak/Desktop/fleet/my-app"
+            />
+            <FolderBrowserPanel
+              listing={folderListing}
+              status={folderListingStatus}
+              selectedPath={newProduct.localPath}
+              onOpenPath={(path) => void loadFolderListing(path)}
+              onSelectPath={selectProductFolder}
             />
             <Textarea
               className="min-h-16"
@@ -1541,6 +1591,68 @@ function PaneResizeHandle({
   );
 }
 
+function FolderBrowserPanel({
+  listing,
+  status,
+  selectedPath,
+  onOpenPath,
+  onSelectPath
+}: {
+  listing: LocalFolderListing | undefined;
+  status: string;
+  selectedPath: string;
+  onOpenPath: (path: string | null) => void;
+  onSelectPath: (path: string) => void;
+}) {
+  return (
+    <section className="grid gap-2 rounded-lg border border-stone-800 bg-stone-950/70 p-2" aria-label="Local folder browser">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[11px] font-extrabold uppercase text-stone-500">Pick folder</p>
+        <div className="flex items-center gap-1">
+          <Button variant="outline" size="sm" type="button" disabled={!listing?.parentPath} onClick={() => onOpenPath(listing?.parentPath ?? null)}>
+            <ChevronLeft size={13} />
+            Up
+          </Button>
+          <Button variant="outline" size="sm" type="button" onClick={() => onOpenPath(null)}>
+            Root
+          </Button>
+        </div>
+      </div>
+      <p className="break-words rounded-md bg-stone-900 px-2 py-1.5 text-[11px] leading-4 text-stone-400">{listing?.currentPath ?? (status || "Loading folders...")}</p>
+      {listing ? (
+        <Button variant={selectedPath === listing.currentPath ? "default" : "outline"} size="sm" type="button" onClick={() => onSelectPath(listing.currentPath)}>
+          <Folder size={13} />
+          Use this folder
+        </Button>
+      ) : null}
+      {status && listing ? <p className="text-xs leading-5 text-amber-200">{status}</p> : null}
+      {listing ? (
+        <div className="grid max-h-44 gap-1 overflow-auto pr-1">
+          {listing.entries.length > 0 ? (
+            listing.entries.map((entry) => (
+              <button
+                className={cn(
+                  "flex min-h-8 items-center gap-2 rounded-md border px-2 text-left text-xs font-semibold transition-colors",
+                  selectedPath === entry.path ? "border-emerald-400 bg-emerald-400 text-stone-950" : "border-stone-800 bg-stone-900/70 text-stone-200 hover:border-stone-700"
+                )}
+                type="button"
+                key={entry.path}
+                onClick={() => onOpenPath(entry.path)}
+                onDoubleClick={() => onSelectPath(entry.path)}
+              >
+                <Folder size={13} />
+                <span className="truncate">{entry.name}</span>
+              </button>
+            ))
+          ) : (
+            <p className="rounded-md border border-stone-800 px-2 py-2 text-xs text-stone-500">No child folders here.</p>
+          )}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function RoomDeck({
   rooms,
   workspace,
@@ -1818,6 +1930,15 @@ function compareProductNameAsc(a: Room, b: Room, productById: ReadonlyMap<string
 
 function compareRoomTitleAsc(a: Room, b: Room): number {
   return a.title.localeCompare(b.title);
+}
+
+function folderNameToProductName(path: string): string {
+  const folderName = path.split(/[\\/]/).filter(Boolean).at(-1) ?? "Local project";
+  return folderName
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
+    .join(" ");
 }
 
 function chunkArray<T>(items: T[], size: number): T[][] {

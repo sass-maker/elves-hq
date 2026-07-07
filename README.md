@@ -23,7 +23,9 @@ pnpm dev:daemon
 pnpm dev:ui
 ```
 
-The UI runs on `http://127.0.0.1:5177/`. The local daemon runs on `http://127.0.0.1:4327/` and stores local room data in `data/elves.db`. Room runs default to a 120 second runtime cap; override with `ELVES_HQ_RUN_TIMEOUT_MS`.
+The UI runs on the local Vite URL printed by `pnpm dev:ui`. The local daemon defaults to `http://127.0.0.1:4327/` and stores local room data in `data/elves.db`. Room runs default to a 120 second runtime cap; override with `ELVES_HQ_RUN_TIMEOUT_MS`.
+
+The add-project panel includes a local folder browser backed by the daemon. It lists child directories under the fleet root, lets you select a product folder without typing the path, and then reuses the existing read-only folder health preview before saving.
 
 Worktree-backed runs create isolated git worktrees under `runs/<run-id>/worktree` and captured patches at `runs/<run-id>/diff.patch`. The `runs/` directory is local-only and ignored.
 
@@ -57,6 +59,7 @@ pnpm check
 
 - `GET /api/runs/:id/prompt` returns the captured prompt for a run.
 - `GET /api/briefs/daily` returns the current local Daily Brief.
+- `GET /api/folders` lists child directories under the local fleet root for the add-project folder browser.
 - `GET /api/products/:id/memory` returns local Product Memory Markdown sections.
 - `POST /api/products/:id/memory/:section` saves a Product Memory section.
 - `GET /api/workspace` includes built-in playbooks and each room's selected `playbookId`.
