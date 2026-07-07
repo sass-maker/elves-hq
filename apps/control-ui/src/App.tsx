@@ -1,6 +1,7 @@
 import {
   Activity,
   ArrowRight,
+  Bell,
   BookOpenText,
   CalendarDays,
   CheckCircle2,
@@ -21,7 +22,10 @@ import {
   PanelRightOpen,
   Radio,
   Inbox,
+  LayoutDashboard,
+  Map as MapIcon,
   ScrollText,
+  Settings2,
   ShieldCheck,
   Sparkles,
   SquareTerminal,
@@ -154,6 +158,8 @@ type RoomOutputPreview = {
   icon: React.ReactNode;
   body?: string;
 };
+
+type ShellView = "overview" | "room";
 
 type ProductPulseRow = {
   product: Product;
@@ -330,6 +336,7 @@ export function App() {
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
   const [isAddingProduct, setIsAddingProduct] = useState(false);
   const [activeOverviewPanel, setActiveOverviewPanel] = useState<OverviewPanel>("needs");
+  const [activeShellView, setActiveShellView] = useState<ShellView>("overview");
   const [paneLayout, setPaneLayout] = useState<PaneLayout>(readStoredPaneLayout);
   const [roomSignalFilter, setRoomSignalFilter] = useState<RoomSignalFilter>("all");
   const [roomSortOrder, setRoomSortOrder] = useState<RoomSortOrder>("priority");
@@ -1309,11 +1316,48 @@ export function App() {
     setDailyBriefSnapshotStatus(`Opened ${body.outputPath}`);
   };
 
+  const openRoomFromCommandCenter = (room: Room) => {
+    setSelectedProductId(room.productId);
+    setSelectedRoomId(room.id);
+    setIsCreatingRoom(false);
+    setFocusedRoomId(null);
+    setActiveShellView("room");
+  };
+
+  if (activeShellView === "overview") {
+    return (
+      <TerminalCommandCenter
+        workspace={workspace}
+        rooms={visibleRooms.length > 0 ? visibleRooms : workspace.rooms}
+        selectedProductId={selectedProductId}
+        selectedRoomId={selectedRoom.id}
+        decisionItems={decisionItems}
+        dailyBrief={dailyBrief}
+        elfFmFeed={elfFmFeed}
+        roomRuns={roomRuns}
+        daemonState={daemonState}
+        syncState={syncState}
+        lastSyncAt={lastSyncAt}
+        onSelectProduct={setSelectedProductId}
+        onOpenRoom={openRoomFromCommandCenter}
+        onOpenRoomView={() => setActiveShellView("room")}
+      />
+    );
+  }
+
   return (
     <main
       className="dark-cockpit grid h-screen min-h-[760px] min-w-[1040px] gap-0 bg-[#070706] p-2.5 text-stone-100 max-lg:flex max-lg:h-auto max-lg:min-w-0 max-lg:flex-col max-lg:gap-2.5"
       style={{ gridTemplateColumns: mainGridTemplateColumns }}
     >
+      <button
+        className="fixed right-5 top-5 z-50 inline-flex h-9 items-center gap-2 rounded-md border border-blue-300/20 bg-[#020408]/90 px-3 font-mono text-[11px] uppercase tracking-[0.14em] text-blue-200 shadow-2xl shadow-black/40 backdrop-blur transition-colors hover:border-blue-300/50 hover:text-blue-100"
+        type="button"
+        onClick={() => setActiveShellView("overview")}
+      >
+        <SquareTerminal size={14} />
+        Command center
+      </button>
       {!isRoomFocused ? (
       <aside className="min-w-[220px] overflow-auto rounded-l-2xl rounded-r-md border border-stone-800 bg-stone-950/92 p-4 shadow-2xl shadow-black/40 max-lg:w-full max-lg:max-w-none max-lg:rounded-2xl">
         <div className="mb-6 flex items-center gap-3">
@@ -1683,6 +1727,505 @@ export function App() {
       </section>
     </main>
   );
+}
+
+function TerminalCommandCenter({
+  workspace,
+  rooms,
+  selectedProductId,
+  selectedRoomId,
+  decisionItems,
+  dailyBrief,
+  elfFmFeed,
+  roomRuns,
+  daemonState,
+  syncState,
+  lastSyncAt,
+  onSelectProduct,
+  onOpenRoom,
+  onOpenRoomView
+}: {
+  workspace: WorkspaceSeed;
+  rooms: Room[];
+  selectedProductId: string;
+  selectedRoomId: string;
+  decisionItems: DecisionItem[];
+  dailyBrief: DailyBrief;
+  elfFmFeed: ElfFmFeed;
+  roomRuns: Record<string, ElfRun[]>;
+  daemonState: "connecting" | "local" | "fallback";
+  syncState: "connecting" | "live" | "stale";
+  lastSyncAt: string;
+  onSelectProduct: (productId: string) => void;
+  onOpenRoom: (room: Room) => void;
+  onOpenRoomView: () => void;
+}) {
+  const scopedDecisionItems = decisionItems
+    .filter((item) => selectedProductId === "all" || item.productId === selectedProductId)
+    .sort((a, b) => b.urgency - a.urgency);
+  const interventionItem = scopedDecisionItems[0];
+  const interventionRoom =
+    (interventionItem ? workspace.rooms.find((room) => room.id === interventionItem.roomId) : undefined) ??
+    rooms.find((room) => room.status === "asking" || room.status === "blocked" || room.status === "failed" || room.status === "ready");
+
+  const sortedRooms = [...rooms]
+    .filter((room) => room.status !== "done")
+    .sort((a, b) => statusOrder.indexOf(a.status) - statusOrder.indexOf(b.status) || compareRoomActivityDesc(a, b));
+  const primaryRoom = sortedRooms.find((room) => room.status === "working") ?? sortedRooms.find((room) => room.status === "ready") ?? sortedRooms[0];
+  const smallRooms = sortedRooms
+    .filter((room) => room.id !== primaryRoom?.id && room.id !== interventionRoom?.id)
+    .slice(0, 2);
+  const fallbackRooms = workspace.rooms
+    .filter((room) => room.id !== primaryRoom?.id && room.id !== interventionRoom?.id && !smallRooms.some((item) => item.id === room.id))
+    .slice(0, Math.max(0, 2 - smallRooms.length));
+  const secondaryRooms = [...smallRooms, ...fallbackRooms].slice(0, 2);
+  const activeCount = workspace.rooms.filter((room) => room.status === "working").length;
+  const interventionCount = decisionItems.length;
+  const systemLoad = Math.min(92, Math.max(8, activeCount * 18 + interventionCount * 9));
+  const navProducts = workspace.products.slice(0, 7);
+
+  return (
+    <main className="terminal-shell terminal-grid-bg min-h-screen min-w-[1080px] bg-[#020408] p-6 text-slate-100 max-lg:min-w-0 max-lg:p-3">
+      <div className="grid min-h-[calc(100vh-48px)] grid-cols-[264px_1fr] overflow-hidden rounded-xl border border-slate-700/60 bg-[#020408] shadow-2xl shadow-black/60 max-lg:grid-cols-1">
+        <aside className="flex min-h-0 flex-col border-r border-slate-700/60 bg-[#020408] px-5 py-6 max-lg:border-b max-lg:border-r-0">
+          <button
+            className="mb-7 grid h-9 w-9 place-items-center rounded-md text-slate-400 transition-colors hover:bg-slate-900 hover:text-blue-200"
+            type="button"
+            aria-label="Open room controls"
+            onClick={onOpenRoomView}
+          >
+            <ChevronLeft size={20} />
+          </button>
+
+          <div className="mb-8 flex items-center gap-4">
+            <div className="grid size-11 shrink-0 place-items-center rounded border border-slate-600/80 bg-slate-950 text-blue-200">
+              <SquareTerminal size={21} />
+            </div>
+            <div className="min-w-0">
+              <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-500">Local command room</p>
+              <h1 className="text-[26px] font-semibold leading-7 tracking-normal text-blue-100">Elves HQ</h1>
+              <p className="mt-1 font-mono text-[10px] text-slate-500">v0.local</p>
+            </div>
+          </div>
+
+          <p className="mb-8 px-1 font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">
+            Founder operator
+          </p>
+
+          <nav className="grid gap-1" aria-label="Command center sections">
+            <button
+              className={cn(
+                "flex min-h-11 items-center gap-3 border-r-2 px-3 text-left font-mono text-xs uppercase tracking-[0.18em] transition-colors",
+                selectedProductId === "all" ? "border-blue-300 bg-slate-950 text-blue-100" : "border-transparent text-slate-400 hover:bg-slate-950 hover:text-blue-100"
+              )}
+              type="button"
+              onClick={() => onSelectProduct("all")}
+            >
+              <LayoutDashboard size={18} />
+              Overview
+            </button>
+            <button
+              className="flex min-h-11 items-center gap-3 border-r-2 border-transparent px-3 text-left font-mono text-xs uppercase tracking-[0.18em] text-slate-400 transition-colors hover:bg-slate-950 hover:text-blue-100"
+              type="button"
+              onClick={onOpenRoomView}
+            >
+              <SquareTerminal size={18} />
+              Rooms
+            </button>
+            <div className="flex min-h-11 items-center gap-3 border-r-2 border-transparent px-3 text-left font-mono text-xs uppercase tracking-[0.18em] text-slate-600">
+              <MapIcon size={18} />
+              Roadmap
+            </div>
+          </nav>
+
+          <div className="mt-8 grid gap-1.5">
+            <p className="mb-1 px-1 font-mono text-[10px] uppercase tracking-[0.18em] text-slate-600">Projects</p>
+            {navProducts.map((product) => {
+              const productRooms = workspace.rooms.filter((room) => room.productId === product.id);
+              const needs = productRooms.filter((room) => room.status === "asking" || room.status === "blocked" || room.status === "failed" || room.status === "ready").length;
+
+              return (
+                <button
+                  className={cn(
+                    "flex items-center justify-between gap-2 rounded px-2.5 py-2 text-left text-xs transition-colors",
+                    selectedProductId === product.id ? "bg-slate-950 text-slate-100" : "text-slate-500 hover:bg-slate-950 hover:text-slate-200"
+                  )}
+                  key={product.id}
+                  type="button"
+                  onClick={() => onSelectProduct(product.id)}
+                >
+                  <span className="min-w-0 truncate font-semibold">{product.name}</span>
+                  <span className={cn("font-mono text-[10px]", needs > 0 ? "text-amber-200" : "text-slate-600")}>{needs || productRooms.length}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="mt-auto border-t border-slate-800 pt-5">
+            <div className="mb-2 flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.15em] text-slate-500">
+              <span>Sys_load</span>
+              <span className="text-blue-200">{systemLoad}%</span>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-slate-950">
+              <div className="h-full rounded-full bg-blue-200" style={{ width: `${systemLoad}%` }} />
+            </div>
+            <p className="mt-3 font-mono text-[10px] leading-4 text-slate-600">
+              {daemonState === "local" ? `${syncState === "stale" ? "STALE" : "LIVE"} ${lastSyncAt || "sync"}` : daemonState === "connecting" ? "CONNECTING daemon" : "SEED fallback"}
+            </p>
+          </div>
+        </aside>
+
+        <section className="min-w-0">
+          <header className="flex h-16 items-center justify-between border-b border-slate-700/60 px-7 max-sm:px-4">
+            <button
+              className="font-mono text-xs uppercase tracking-[0.22em] text-slate-400 transition-colors hover:text-blue-100"
+              type="button"
+              onClick={() => onSelectProduct("all")}
+            >
+              {selectedProductId === "all" ? "All projects" : workspace.products.find((product) => product.id === selectedProductId)?.name ?? "All projects"}
+            </button>
+            <div className="flex items-center gap-3 text-slate-400">
+              <button className="grid size-8 place-items-center rounded transition-colors hover:bg-slate-950 hover:text-blue-100" type="button" aria-label="Open room controls" onClick={onOpenRoomView}>
+                <Maximize2 size={18} />
+              </button>
+              <button className="grid size-8 place-items-center rounded transition-colors hover:bg-slate-950 hover:text-blue-100" type="button" aria-label="Open room controls" onClick={onOpenRoomView}>
+                <Settings2 size={18} />
+              </button>
+              <button
+                className="relative grid size-8 place-items-center rounded transition-colors hover:bg-slate-950 hover:text-blue-100 disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-slate-400"
+                type="button"
+                aria-label="Open intervention room"
+                disabled={!interventionRoom}
+                onClick={() => {
+                  if (interventionRoom) {
+                    onOpenRoom(interventionRoom);
+                  }
+                }}
+              >
+                <Bell size={18} />
+                {interventionCount > 0 ? <span className="absolute right-2 top-2 size-1.5 rounded-full bg-blue-200" /> : null}
+              </button>
+              <div className="grid size-8 place-items-center rounded-full border border-slate-700 bg-slate-950 font-mono text-[10px] text-blue-100">HQ</div>
+            </div>
+          </header>
+
+          <div className="grid min-h-[calc(100vh-112px)] grid-cols-[minmax(0,1fr)_410px] gap-2 p-7 max-xl:grid-cols-1 max-sm:p-4">
+            <div className="grid auto-rows-[minmax(246px,1fr)] grid-cols-2 gap-2 max-lg:grid-cols-1">
+              {primaryRoom ? (
+                <TerminalPanel
+                  room={primaryRoom}
+                  workspace={workspace}
+                  runs={roomRuns[primaryRoom.id] ?? []}
+                  selected={primaryRoom.id === selectedRoomId}
+                  span="large"
+                  onOpen={() => onOpenRoom(primaryRoom)}
+                />
+              ) : (
+                <TerminalEmptyPanel title="No active rooms" body="Add a local project and create a task room from the room controls." />
+              )}
+              {secondaryRooms.map((room) => (
+                <TerminalPanel
+                  key={room.id}
+                  room={room}
+                  workspace={workspace}
+                  runs={roomRuns[room.id] ?? []}
+                  selected={room.id === selectedRoomId}
+                  onOpen={() => onOpenRoom(room)}
+                />
+              ))}
+              {secondaryRooms.length === 0 ? (
+                <TerminalEmptyPanel title="Room bay idle" body={`Daily Brief: ${dailyBrief.totals.ready} ready, ${dailyBrief.totals.blocked + dailyBrief.totals.failed} stuck.`} />
+              ) : null}
+            </div>
+
+            {interventionRoom ? (
+              <TerminalPanel
+                room={interventionRoom}
+                workspace={workspace}
+                runs={roomRuns[interventionRoom.id] ?? []}
+                decisionItem={interventionItem}
+                selected={interventionRoom.id === selectedRoomId}
+                variant="alert"
+                onOpen={() => onOpenRoom(interventionRoom)}
+              />
+            ) : (
+              <TerminalEmptyPanel title="No intervention" body={elfFmFeed.globalStation.nowPlaying || "Elves are quiet. No founder decision is open."} variant="alert" />
+            )}
+          </div>
+        </section>
+      </div>
+    </main>
+  );
+}
+
+function TerminalPanel({
+  room,
+  workspace,
+  runs,
+  decisionItem,
+  selected,
+  variant = "default",
+  span,
+  onOpen
+}: {
+  room: Room;
+  workspace: WorkspaceSeed;
+  runs: ElfRun[];
+  decisionItem?: DecisionItem;
+  selected: boolean;
+  variant?: "default" | "alert";
+  span?: "large";
+  onOpen: () => void;
+}) {
+  const product = roomProduct(workspace, room);
+  const elf = roomElf(workspace, room);
+  const tone = terminalToneForRoom(room, variant);
+  const lines = buildTerminalLines(room, product, elf, runs, decisionItem);
+
+  return (
+    <article
+      className={cn(
+        "group relative flex min-h-0 flex-col overflow-hidden rounded-sm border bg-[#05080d] transition-colors",
+        span === "large" && "col-span-2 max-lg:col-span-1",
+        terminalToneClasses[tone].panel,
+        selected && "ring-1 ring-blue-200/40"
+      )}
+    >
+      <header className={cn("flex items-center justify-between border-b bg-[#020408] px-4 py-3", terminalToneClasses[tone].header)}>
+        <div className="flex min-w-0 items-center gap-2">
+          <span className={cn("size-2 rounded-full shadow-[0_0_12px_currentColor]", terminalToneClasses[tone].dot)} />
+          <span className={cn("truncate font-mono text-[11px] uppercase tracking-[0.16em]", terminalToneClasses[tone].title)}>
+            {ttyLabel(room)} // {slugForTerminal(room.title)}
+            <span className="ml-3 text-slate-600">{shortPath(product.localPath)}</span>
+          </span>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <button className={cn("transition-colors", terminalToneClasses[tone].icon)} type="button" aria-label={`Open ${room.title}`} onClick={onOpen}>
+            <Maximize2 size={17} />
+          </button>
+          <button className="text-slate-600 transition-colors hover:text-slate-300" type="button" aria-label="Minimize room">
+            <Minimize2 size={17} />
+          </button>
+        </div>
+      </header>
+      <button
+        className={cn("terminal-scroll flex-1 overflow-auto p-5 text-left font-mono text-[13px] leading-6", terminalToneClasses[tone].body)}
+        type="button"
+        onClick={onOpen}
+      >
+        {lines.map((line, index) => (
+          <span className={cn("block whitespace-pre-wrap", terminalLineClass(line))} key={`${room.id}-${index}`}>
+            {line}
+          </span>
+        ))}
+        <span className={cn("mt-1 inline-block h-4 w-2 align-middle terminal-cursor", terminalToneClasses[tone].cursor)} />
+      </button>
+      <footer className={cn("absolute bottom-4 right-4 flex items-center gap-3 rounded-full border bg-[#020408]/92 py-1.5 pl-3 pr-2 shadow-xl shadow-black/40 backdrop-blur", terminalToneClasses[tone].footer)}>
+        <span className="flex items-center gap-2">
+          <span className={cn("size-1.5 rounded-full", terminalToneClasses[tone].dot)} />
+          <span className={cn("font-mono text-[10px] uppercase tracking-[0.12em]", terminalToneClasses[tone].title)}>
+            {elf.name} {statusLabels[room.status]}
+          </span>
+        </span>
+        <span className="grid size-6 place-items-center rounded-full border border-slate-700 bg-slate-950 text-[10px] text-slate-400">{elf.name.slice(0, 1)}</span>
+      </footer>
+      <div className="absolute bottom-1 right-1 text-slate-700 opacity-40 transition-opacity group-hover:opacity-90">
+        <GripVertical size={14} className="-rotate-45" />
+      </div>
+    </article>
+  );
+}
+
+function TerminalEmptyPanel({ title, body, variant = "default" }: { title: string; body: string; variant?: "default" | "alert" }) {
+  const tone = variant === "alert" ? "alert" : "muted";
+  return (
+    <article className={cn("flex min-h-[246px] flex-col overflow-hidden rounded-sm border bg-[#05080d]", terminalToneClasses[tone].panel)}>
+      <header className={cn("border-b bg-[#020408] px-4 py-3", terminalToneClasses[tone].header)}>
+        <span className={cn("font-mono text-[11px] uppercase tracking-[0.16em]", terminalToneClasses[tone].title)}>TTY-00 // EMPTY_BAY</span>
+      </header>
+      <div className={cn("grid flex-1 place-items-center p-6 text-center font-mono text-xs leading-6", terminalToneClasses[tone].body)}>
+        <div>
+          <p className="uppercase tracking-[0.18em] text-slate-500">{title}</p>
+          <p className="mt-2 max-w-sm text-slate-500">{body}</p>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+type TerminalTone = "blue" | "amber" | "red" | "muted" | "alert";
+
+const terminalToneClasses: Record<
+  TerminalTone,
+  {
+    panel: string;
+    header: string;
+    dot: string;
+    title: string;
+    body: string;
+    footer: string;
+    icon: string;
+    cursor: string;
+  }
+> = {
+  blue: {
+    panel: "border-blue-300/30",
+    header: "border-blue-300/20",
+    dot: "bg-blue-200 text-blue-200",
+    title: "text-blue-100",
+    body: "text-slate-300",
+    footer: "border-blue-300/20",
+    icon: "text-slate-500 hover:text-blue-100",
+    cursor: "bg-blue-200"
+  },
+  amber: {
+    panel: "border-amber-300/24",
+    header: "border-amber-300/18",
+    dot: "bg-amber-200 text-amber-200",
+    title: "text-amber-100",
+    body: "text-amber-100/75",
+    footer: "border-amber-300/22",
+    icon: "text-amber-100/55 hover:text-amber-100",
+    cursor: "bg-amber-200"
+  },
+  red: {
+    panel: "border-red-300/28 bg-[#060203]",
+    header: "border-red-300/18",
+    dot: "bg-red-200 text-red-200",
+    title: "text-red-100",
+    body: "text-red-100/75",
+    footer: "border-red-300/25",
+    icon: "text-red-100/55 hover:text-red-100",
+    cursor: "bg-red-200"
+  },
+  muted: {
+    panel: "border-slate-700/70",
+    header: "border-slate-700/70",
+    dot: "bg-slate-300 text-slate-300",
+    title: "text-slate-300",
+    body: "text-slate-400",
+    footer: "border-slate-700/70",
+    icon: "text-slate-500 hover:text-slate-200",
+    cursor: "bg-slate-300"
+  },
+  alert: {
+    panel: "border-red-300/35 bg-[#050102]",
+    header: "border-red-300/20",
+    dot: "bg-red-200 text-red-200 animate-pulse",
+    title: "text-red-100",
+    body: "text-red-100/78",
+    footer: "border-red-300/30",
+    icon: "text-red-100/55 hover:text-red-100",
+    cursor: "bg-red-200"
+  }
+};
+
+function terminalToneForRoom(room: Room, variant: "default" | "alert"): TerminalTone {
+  if (variant === "alert") {
+    return "alert";
+  }
+  if (room.status === "failed" || room.status === "blocked") {
+    return "red";
+  }
+  if (room.status === "asking") {
+    return "amber";
+  }
+  if (room.status === "working" || room.status === "ready") {
+    return "blue";
+  }
+  return "muted";
+}
+
+function buildTerminalLines(room: Room, product: Product, elf: ReturnType<typeof roomElf>, runs: ElfRun[], decisionItem?: DecisionItem): string[] {
+  const latestRun = runs.find((run) => run.status === "running") ?? runs[0];
+  const openAsk = room.asks[0];
+  const openDecision = room.decisions.find((decision) => decision.status === "open");
+  const lines: string[] = [
+    `[ROOM] ${room.title}`,
+    `[PROD] ${product.name}`,
+    `[ELF] ${elf.name} assigned to ${elf.role} lane.`,
+    `[STAT] ${statusLabels[room.status]} // last activity ${room.lastActivityAt}`
+  ];
+
+  if (decisionItem) {
+    lines.push(`[NEED] ${decisionItem.title}`);
+    lines.push(`[WHY] ${decisionItem.reason}`);
+    if (decisionItem.recommendation) {
+      lines.push(`[REC] ${decisionItem.recommendation}`);
+    }
+  } else if (openAsk) {
+    lines.push(`[ASK] ${openAsk.question}`);
+    if (openAsk.recommendation) {
+      lines.push(`[REC] ${openAsk.recommendation}`);
+    }
+  } else if (openDecision) {
+    lines.push(`[DEC] ${openDecision.title} // risk ${openDecision.risk}`);
+  }
+
+  if (latestRun) {
+    lines.push(`[RUN] ${latestRun.mode} // ${runTimingLabel(latestRun)}`);
+    if (latestRun.branchName) {
+      lines.push(`[GIT] branch ${latestRun.branchName}`);
+    }
+  }
+
+  const artifacts = room.artifacts.slice(-3);
+  for (const artifact of artifacts) {
+    lines.push(`[ART] ${artifact.status.toUpperCase()} ${artifact.type}: ${artifact.title}`);
+  }
+
+  const logs = room.logs.slice(-7);
+  for (const log of logs) {
+    lines.push(`[${log.level.toUpperCase()}] ${log.time} ${log.message}`);
+  }
+
+  if (logs.length === 0 && artifacts.length === 0 && !decisionItem && !openAsk && !openDecision) {
+    lines.push(`[NOTE] ${room.summary || "No room evidence captured yet."}`);
+    lines.push("[SYS] Awaiting first artifact-backed elf update.");
+  }
+
+  return lines.map(trimTerminalLine).slice(0, 18);
+}
+
+function trimTerminalLine(line: string): string {
+  return line.length > 132 ? `${line.slice(0, 129)}...` : line;
+}
+
+function terminalLineClass(line: string): string {
+  if (line.startsWith("[ERR]") || line.startsWith("[ERROR]") || line.startsWith("[FAIL") || line.startsWith("[NEED]")) {
+    return "text-red-100";
+  }
+  if (line.startsWith("[WARN]") || line.startsWith("[WARNING]") || line.startsWith("[ASK]") || line.startsWith("[REC]")) {
+    return "text-amber-100";
+  }
+  if (line.startsWith("[SUCCESS]") || line.startsWith("[READY]") || line.includes("PASSED")) {
+    return "text-blue-100";
+  }
+  if (line.startsWith("[ART]") || line.startsWith("[RUN]") || line.startsWith("[GIT]")) {
+    return "text-slate-200";
+  }
+  return "";
+}
+
+function ttyLabel(room: Room): string {
+  const hash = Array.from(room.id).reduce((total, char) => total + char.charCodeAt(0), 0);
+  return `TTY-${String((hash % 89) + 1).padStart(2, "0")}`;
+}
+
+function slugForTerminal(value: string): string {
+  return value
+    .replace(/[^a-zA-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 18)
+    .toUpperCase() || "ROOM";
+}
+
+function shortPath(path: string): string {
+  const segments = path.split(/[\\/]/).filter(Boolean);
+  if (segments.length <= 2) {
+    return path || "/local/product";
+  }
+  return `/${segments.slice(-2).join("/")}`;
 }
 
 function PaneResizeHandle({

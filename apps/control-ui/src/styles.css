@@ -37,6 +37,46 @@ ul {
   overflow-wrap: anywhere;
 }
 
+.terminal-shell {
+  font-family:
+    Geist, Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.terminal-grid-bg {
+  background-color: #020408;
+  background-image: radial-gradient(circle at 1px 1px, rgba(148, 163, 184, 0.22) 1px, transparent 0);
+  background-size: 22px 22px;
+}
+
+.terminal-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #334155 transparent;
+}
+
+.terminal-scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.terminal-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.terminal-scroll::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 999px;
+}
+
+.terminal-cursor {
+  animation: terminal-cursor-blink 1s step-start infinite;
+}
+
+@keyframes terminal-cursor-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
 .dark-cockpit .bg-white,
 .dark-cockpit .bg-white\/70,
 .dark-cockpit .bg-white\/80,
