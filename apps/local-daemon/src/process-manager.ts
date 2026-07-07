@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -37,6 +37,11 @@ export class RoomProcessManager {
     const task = this.store.getTask(room.taskId);
     const memory = this.store.getProductMemory(product.id);
     const playbook = this.store.getPlaybook(room.playbookId);
+    const preflight = preflightRunLaunch(product.localPath, options.mode);
+    if (!preflight.ok) {
+      this.store.appendRoomLog(room.id, "warning", preflight.message);
+      throw new Error(preflight.message);
+    }
     const command = this.buildCommandDescription(product.localPath, task.title, options);
     const founderPrompt = options.prompt?.trim();
     const prompt = founderPrompt || buildRoomRunPrompt(room, product, task, memory, playbook, options.mode);
@@ -345,10 +350,10 @@ export class RoomProcessManager {
         "--sandbox",
         options.mode === "codex-worktree" ? "workspace-write" : "read-only",
         "-C",
-        existsSync(runCwd) ? runCwd : projectRoot,
+        runCwd,
         prompt
       ],
-      { cwd: existsSync(runCwd) ? runCwd : projectRoot }
+      { cwd: runCwd }
     );
   }
 
@@ -600,6 +605,32 @@ function parseElfAskLine(line: string) {
   } catch {
     return undefined;
   }
+}
+
+function preflightRunLaunch(localPath: string, mode: ElfRun["mode"]): { ok: true } | { ok: false; message: string } {
+  if (mode === "dry-run") {
+    return { ok: true };
+  }
+
+  const sourcePath = resolve(projectRoot, localPath);
+  if (!existsSync(sourcePath)) {
+    return { ok: false, message: `Run preflight blocked ${mode}: product path does not exist: ${sourcePath}` };
+  }
+
+  if (!statSync(sourcePath).isDirectory()) {
+    return { ok: false, message: `Run preflight blocked ${mode}: product path is not a directory: ${sourcePath}` };
+  }
+
+  if (mode === "codex-readonly") {
+    return { ok: true };
+  }
+
+  const gitCheck = spawnSync("git", ["-C", sourcePath, "rev-parse", "--show-toplevel"], { encoding: "utf8" });
+  if (gitCheck.status !== 0) {
+    return { ok: false, message: `Run preflight blocked ${mode}: product path is not a git repository: ${sourcePath}` };
+  }
+
+  return { ok: true };
 }
 
 function detectCheckCommand(worktreePath: string, requestedScript: CheckScriptKey | undefined) {

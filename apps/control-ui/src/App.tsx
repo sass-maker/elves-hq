@@ -1184,6 +1184,7 @@ export function App() {
           transcriptPreview={transcriptPreview[selectedRoom.id]}
           decisionPreview={decisionPreview[selectedRoom.id]}
           productMemory={selectedProductMemory}
+          productInspection={productInspections[selectedRoom.productId]}
           selectedMemorySection={selectedMemorySection}
           memoryDraft={selectedMemorySectionBody}
           activeWorkbenchTab={selectedRoomWorkbenchTab}
@@ -1848,6 +1849,7 @@ function RoomDetail({
   transcriptPreview,
   decisionPreview,
   productMemory,
+  productInspection,
   selectedMemorySection,
   memoryDraft,
   activeWorkbenchTab,
@@ -1885,6 +1887,7 @@ function RoomDetail({
   transcriptPreview?: string;
   decisionPreview?: string;
   productMemory?: ProductMemory;
+  productInspection?: ProductFolderInspection;
   selectedMemorySection: ProductMemorySectionKey;
   memoryDraft: string;
   activeWorkbenchTab: RoomWorkbenchTab;
@@ -1920,6 +1923,13 @@ function RoomDetail({
   const decisionNote = noteDraft.trim() || undefined;
   const activeMemorySection = productMemory?.sections.find((section) => section.key === selectedMemorySection);
   const gateChecklist = buildGateChecklist(room);
+  const readOnlyBlocker = productInspection && (!productInspection.exists || !productInspection.isDirectory) ? "Product folder is missing or is not a directory." : undefined;
+  const worktreeBlocker =
+    productInspection && (!productInspection.exists || !productInspection.isDirectory)
+      ? "Product folder is missing or is not a directory."
+      : productInspection && !productInspection.isGitRepo
+        ? "Product folder is not a git repository."
+        : undefined;
 
   return (
     <div className="grid gap-4 p-4">
@@ -1975,11 +1985,16 @@ function RoomDetail({
         <div>
           <SectionTitle icon={<PanelRightOpen size={16} />} title="Actions" />
           <GateChecklist items={gateChecklist} />
+          {readOnlyBlocker || worktreeBlocker ? (
+            <div className="mb-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-xs leading-5 text-amber-200">
+              {worktreeBlocker ?? readOnlyBlocker}
+            </div>
+          ) : null}
           <div className="grid grid-cols-3 gap-2">
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onStartDryRun}><Play size={15} />Dry</Button>
-            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onStartCodexReadOnly}><SquareTerminal size={15} />Read</Button>
-            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onStartMode("worktree-dry-run")}><GitBranch size={15} />Draft</Button>
-            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onStartMode("codex-worktree")}><Hammer size={15} />Build</Button>
+            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onStartCodexReadOnly} disabled={Boolean(readOnlyBlocker)}><SquareTerminal size={15} />Read</Button>
+            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onStartMode("worktree-dry-run")} disabled={Boolean(worktreeBlocker)}><GitBranch size={15} />Draft</Button>
+            <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={() => onStartMode("codex-worktree")} disabled={Boolean(worktreeBlocker)}><Hammer size={15} />Build</Button>
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onOpenPrompt}><ScrollText size={15} />Prompt</Button>
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onGenerateTranscript}><FileText size={15} />Doc</Button>
             <Button className="min-w-0 px-2" variant="outline" size="sm" type="button" onClick={onOpenDiff}><GitBranch size={15} />Diff</Button>
