@@ -1,6 +1,9 @@
 # elves-hq - PROJECT STATUS
 
-Last updated: 2026-07-07
+**Portfolio state (2026-07-25): Retired / inactive.** No routine work or
+planning remains. Explicit reactivation is required before feature work.
+
+Last updated: 2026-07-25
 
 ## Why / What
 
@@ -30,8 +33,10 @@ Elves HQ is a local-first founder cockpit for running Codex elves across a produ
 
 ## Timeline
 
+- 2026-07-25 - Moved to the ignored/inactive Fleet tier. Historical planning
+  artifacts were removed; shipped outcomes remain recorded here and in Git.
 - 2026-07-06 - Project created as a fresh local-first replacement direction for SaaS Maker's original operating-cockpit ambition.
-- 2026-07-06 - V0 OpenSpec change `local-task-rooms-v0` started.
+- 2026-07-06 - V0 local task-room implementation started.
 - 2026-07-06 - Local daemon and root SQLite store added for persisted workspace/room data and room notes.
 - 2026-07-07 - Task-room creation, bounded local folder browser, product-first Fleet Pulse, compact overview switcher, live/stale local sync visibility, room signal filters and sorting, active/all room deck filtering, slideable room deck, simplified room selector rows, organized room output shelf, project-wise task backlog with inbox/ready/assigned/done/killed lifecycle, explicit elf assignment, run launch preflight guards, Codex CLI availability preflight, visible terminal run-start failures, terminal polling refresh for room status, isolated worktree runs with visible workspace/branch metadata, interrupted-run recovery, diff capture, approved diff apply, captured prompts and durable run logs, selected-room run duration display, next-run instruction composer, editable local product settings and expanded memory, local product removal, built-in playbooks, structured elf asks and founder answers, focused room mode, collapsible room evidence and memory, room workbench tabs with compact activity timeline, room transcripts, neutral room close action, fix-request retry context, runtime/retry budget guards, local Daily Brief with Markdown export and snapshots, local Elf FM text stations, selectable check gates, CodeVetter gate adapter, generated worktree cleanup, visible room gate checklist, persistent draggable pane layout, manual local product folders with draft folder preview and folder health inspection, calmer dark cockpit styling with fewer visible CTAs, terminal drawer dashboard with captured Codex/run output, readable Codex JSONL room log normalization, all active rooms represented as paged terminal drawers, dashboard terminal creation, resizable snapped terminal drawer grid, focused terminal drawer mode, per-terminal instruction lines, read/build/dry/stop controls, inline terminal ask answering, and terminal-level decision actions, collapsed secondary controls, simplified project pulse rows, command-first room actions, collapsed run instructions and approval gates, a signal-backed Needs Me queue, founder decision actions, and approval guards for failed or missing gates landed in the local cockpit.
 

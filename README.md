@@ -77,7 +77,6 @@ pnpm check
 apps/control-ui   Vite + React local cockpit
 apps/local-daemon Node + built-in SQLite local daemon
 packages/core     shared task-room models and seed state
-openspec/         feature specs and implementation tasks
 ```
 
 ## V0 Thesis

@@ -1,4 +1,0 @@
-- [x] Add command-center terminal pagination behavior.
-- [x] Update shipped status docs.
-- [x] Validate with `pnpm check` and `openspec validate --all --strict`.
-- [x] Archive the OpenSpec change.
